@@ -68,9 +68,9 @@ static void meter_draw_cb(lv_event_t * e) {
 
     for (uint16_t i = 0; i < count; i++) {
         if (db <= params_band.grid_min) {
-            rect_dsc.bg_color = lv_color_hex(0x777777);
+            rect_dsc.bg_color = lv_color_hex(0x009900);
         } else if (db <= -73) {
-            rect_dsc.bg_color = lv_color_hex(0xAAAAAA);
+            rect_dsc.bg_color = lv_color_hex(0x00BB00);
         } else if (db <= -53) {
             rect_dsc.bg_color = lv_color_hex(0xAAAA00);
         } else {
