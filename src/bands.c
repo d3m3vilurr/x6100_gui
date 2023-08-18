@@ -16,7 +16,7 @@
 #include "main_screen.h"
 #include "pannel.h"
 
-#define BANDS_MAX   32
+#define BANDS_MAX   64
 
 static band_t   *bands[BANDS_MAX];
 
