@@ -15,8 +15,8 @@
 #include "params.h"
 #include "util.h"
 #include "bands.h"
-#include "main_screen.h"
 #include "mfk.h"
+#include "vol.h"
 #include "dialog_msg_cw.h"
 
 #define PARAMS_SAVE_TIMEOUT  (3 * 1000)
@@ -57,6 +57,7 @@ params_t params = {
     .xit                    = 0,
     .line_in                = 10,
     .line_out               = 10,
+    .moni                   = 59,
 
     .dnf                    = false,
     .dnf_center             = 1000,
@@ -90,6 +91,9 @@ params_t params = {
     .cw_decoder_snr_gist    = 3.0f,
     .cw_decoder_peak_beta   = 0.10f,
     .cw_decoder_noise_beta  = 0.80f,
+
+    .cw_encoder_period      = 10,
+    .voice_msg_period       = 10,
     
     .rtty_center            = 800,
     .rtty_shift             = 170,
@@ -97,6 +101,21 @@ params_t params = {
     .rtty_reverse           = false,
     .rtty_bits              = 5,
     .rtty_snr               = 3.0f,
+
+    .swrscan_linear         = true,
+    .swrscan_span           = 200000,
+
+    .long_gen               = ACTION_SCREENSHOT,
+    .long_app               = ACTION_APP_RECORDER,
+    .long_key               = ACTION_NONE,
+    .long_msg               = ACTION_RECORDER,
+    .long_dfn               = ACTION_NONE,
+    .long_dfl               = ACTION_NONE,
+    
+    .press_f1               = ACTION_STEP_UP,
+    .press_f2               = ACTION_NONE,
+    .long_f1                = ACTION_STEP_DOWN,
+    .long_f2                = ACTION_NONE,
 };
 
 params_band_t params_band = {
@@ -326,10 +345,6 @@ void params_band_save() {
 }
 
 void params_memory_save(uint16_t id) {
-    if (!params.freq_band) {
-        return;
-    }
-
     if (!params_exec("BEGIN")) {
         return;
     }
@@ -494,6 +509,10 @@ static bool params_load() {
             params.cw_decoder_peak_beta = sqlite3_column_int(stmt, 1) * 0.01f;
         } else if (strcmp(name, "cw_decoder_noise_beta") == 0) {
             params.cw_decoder_noise_beta = sqlite3_column_int(stmt, 1) * 0.01f;
+        } else if (strcmp(name, "cw_encoder_period") == 0) {
+            params.cw_encoder_period = sqlite3_column_int(stmt, 1);
+        } else if (strcmp(name, "voice_msg_period") == 0) {
+            params.voice_msg_period = sqlite3_column_int(stmt, 1);
         } else if (strcmp(name, "vol_modes") == 0) {
             params.vol_modes = sqlite3_column_int64(stmt, 1);
         } else if (strcmp(name, "mfk_modes") == 0) {
@@ -524,6 +543,8 @@ static bool params_load() {
             params.line_in = sqlite3_column_int(stmt, 1);
         } else if (strcmp(name, "line_out") == 0) {
             params.line_out = sqlite3_column_int(stmt, 1);
+        } else if (strcmp(name, "moni") == 0) {
+            params.moni = sqlite3_column_int(stmt, 1);
         } else if (strcmp(name, "mag_freq") == 0) {
             params.mag_freq = sqlite3_column_int(stmt, 1);
         } else if (strcmp(name, "mag_info") == 0) {
@@ -538,6 +559,30 @@ static bool params_load() {
             params.clock_power_timeout = sqlite3_column_int(stmt, 1);
         } else if (strcmp(name, "clock_tx_timeout") == 0) {
             params.clock_tx_timeout = sqlite3_column_int(stmt, 1);
+        } else if (strcmp(name, "swrscan_linear") == 0) {
+            params.swrscan_linear = sqlite3_column_int(stmt, 1);
+        } else if (strcmp(name, "swrscan_span") == 0) {
+            params.swrscan_span = sqlite3_column_int(stmt, 1);
+        } else if (strcmp(name, "long_gen") == 0) {
+            params.long_gen = sqlite3_column_int(stmt, 1);
+        } else if (strcmp(name, "long_app") == 0) {
+            params.long_app = sqlite3_column_int(stmt, 1);
+        } else if (strcmp(name, "long_key") == 0) {
+            params.long_key = sqlite3_column_int(stmt, 1);
+        } else if (strcmp(name, "long_msg") == 0) {
+            params.long_msg = sqlite3_column_int(stmt, 1);
+        } else if (strcmp(name, "long_dfn") == 0) {
+            params.long_dfn = sqlite3_column_int(stmt, 1);
+        } else if (strcmp(name, "long_dfl") == 0) {
+            params.long_dfl = sqlite3_column_int(stmt, 1);
+        } else if (strcmp(name, "press_f1") == 0) {
+            params.press_f1 = sqlite3_column_int(stmt, 1);
+        } else if (strcmp(name, "press_f2") == 0) {
+            params.press_f2 = sqlite3_column_int(stmt, 1);
+        } else if (strcmp(name, "long_f1") == 0) {
+            params.long_f1 = sqlite3_column_int(stmt, 1);
+        } else if (strcmp(name, "long_f2") == 0) {
+            params.long_f2 = sqlite3_column_int(stmt, 1);
         }
     }
     
@@ -630,6 +675,9 @@ static void params_save() {
     if (params.durty.cw_decoder_peak_beta)  params_write_int("cw_decoder_peak_beta", params.cw_decoder_peak_beta * 100, &params.durty.cw_decoder_peak_beta);
     if (params.durty.cw_decoder_noise_beta) params_write_int("cw_decoder_noise_beta", params.cw_decoder_noise_beta * 100, &params.durty.cw_decoder_noise_beta);
 
+    if (params.durty.cw_encoder_period)     params_write_int("cw_encoder_period", params.cw_encoder_period, &params.durty.cw_encoder_period);
+    if (params.durty.voice_msg_period)      params_write_int("voice_msg_period", params.voice_msg_period, &params.durty.voice_msg_period);
+
     if (params.durty.vol_modes)             params_write_int64("vol_modes", params.vol_modes, &params.durty.vol_modes);
     if (params.durty.mfk_modes)             params_write_int64("mfk_modes", params.mfk_modes, &params.durty.mfk_modes);
 
@@ -645,6 +693,8 @@ static void params_save() {
     if (params.durty.line_in)               params_write_int("line_in", params.line_in, &params.durty.line_in);
     if (params.durty.line_out)              params_write_int("line_out", params.line_out, &params.durty.line_out);
 
+    if (params.durty.moni)                  params_write_int("moni", params.moni, &params.durty.moni);
+
     if (params.durty.brightness_normal)     params_write_int("brightness_normal", params.brightness_normal, &params.durty.brightness_normal);
     if (params.durty.brightness_idle)       params_write_int("brightness_idle", params.brightness_idle, &params.durty.brightness_idle);
     if (params.durty.brightness_timeout)    params_write_int("brightness_timeout", params.brightness_timeout, &params.durty.brightness_timeout);
@@ -658,6 +708,21 @@ static void params_save() {
     if (params.durty.clock_time_timeout)    params_write_int("clock_time_timeout", params.clock_time_timeout, &params.durty.clock_time_timeout);
     if (params.durty.clock_power_timeout)   params_write_int("clock_power_timeout", params.clock_power_timeout, &params.durty.clock_power_timeout);
     if (params.durty.clock_tx_timeout)      params_write_int("clock_tx_timeout", params.clock_tx_timeout, &params.durty.clock_tx_timeout);
+
+    if (params.durty.swrscan_linear)        params_write_int("swrscan_linear", params.swrscan_linear, &params.durty.swrscan_linear);
+    if (params.durty.swrscan_span)          params_write_int("swrscan_span", params.swrscan_span, &params.durty.swrscan_span);
+
+    if (params.durty.long_gen)              params_write_int("long_gen", params.long_gen, &params.durty.long_gen);
+    if (params.durty.long_app)              params_write_int("long_app", params.long_app, &params.durty.long_app);
+    if (params.durty.long_key)              params_write_int("long_key", params.long_key, &params.durty.long_key);
+    if (params.durty.long_msg)              params_write_int("long_msg", params.long_msg, &params.durty.long_msg);
+    if (params.durty.long_dfn)              params_write_int("long_dfn", params.long_dfn, &params.durty.long_dfn);
+    if (params.durty.long_dfl)              params_write_int("long_dfl", params.long_dfl, &params.durty.long_dfl);
+
+    if (params.durty.press_f1)              params_write_int("press_f1", params.press_f1, &params.durty.press_f1);
+    if (params.durty.press_f2)              params_write_int("press_f2", params.press_f2, &params.durty.press_f2);
+    if (params.durty.long_f1)               params_write_int("long_f1", params.long_f1, &params.durty.long_f1);
+    if (params.durty.long_f2)               params_write_int("long_f2", params.long_f2, &params.durty.long_f2);
 
     params_exec("COMMIT");
 }

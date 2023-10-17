@@ -75,6 +75,22 @@ typedef enum {
     BUTTONS_TEMPORARILY
 } buttons_light_t;
 
+typedef enum {
+    ACTION_NONE = 0,
+    ACTION_SCREENSHOT,
+    ACTION_RECORDER,
+    ACTION_MUTE,
+    ACTION_STEP_UP,
+    ACTION_STEP_DOWN,
+
+    ACTION_APP_RTTY = 100,
+    ACTION_APP_FT8,
+    ACTION_APP_SWRSCAN,
+    ACTION_APP_GPS,
+    ACTION_APP_SETTINGS,
+    ACTION_APP_RECORDER
+} press_action_t;
+
 typedef struct {
     uint64_t            vol_modes;
     uint64_t            mfk_modes;
@@ -110,6 +126,7 @@ typedef struct {
     int16_t             xit;
     uint8_t             line_in;
     uint8_t             line_out;
+    int16_t             moni;
     
     /* DSP */
     
@@ -171,6 +188,11 @@ typedef struct {
     float               cw_decoder_peak_beta;
     float               cw_decoder_noise_beta;
 
+    /* Msg */
+    
+    uint16_t            cw_encoder_period;  /* seconds */
+    uint16_t            voice_msg_period;   /* seconds */
+
     /* RTTY */
     
     uint16_t            rtty_center;
@@ -179,6 +201,27 @@ typedef struct {
     bool                rtty_reverse;
     uint8_t             rtty_bits;
     float               rtty_snr;
+
+    /* SWR Scan */
+
+    bool                swrscan_linear;
+    uint32_t            swrscan_span;
+    
+    /* Long press actions */
+    
+    uint8_t             long_gen;
+    uint8_t             long_app;
+    uint8_t             long_key;
+    uint8_t             long_msg;
+    uint8_t             long_dfn;
+    uint8_t             long_dfl;
+    
+    /* HMic F1, F2 actions */
+    
+    uint8_t             press_f1;
+    uint8_t             press_f2;
+    uint8_t             long_f1;
+    uint8_t             long_f2;
     
     /* durty flags */
     
@@ -206,6 +249,7 @@ typedef struct {
         bool    xit;
         bool    line_in;
         bool    line_out;
+        bool    moni;
         
         bool    dnf;
         bool    dnf_center;
@@ -251,11 +295,29 @@ typedef struct {
         bool    cw_decoder_snr;
         bool    cw_decoder_peak_beta;
         bool    cw_decoder_noise_beta;
+        
+        bool    cw_encoder_period;
+        bool    voice_msg_period;
 
         bool    rtty_center;
         bool    rtty_shift;
         bool    rtty_rate;
         bool    rtty_reverse;
+
+        bool    swrscan_linear;
+        bool    swrscan_span;
+
+        bool    long_gen;
+        bool    long_app;
+        bool    long_key;
+        bool    long_msg;
+        bool    long_dfn;
+        bool    long_dfl;
+
+        bool    press_f1;
+        bool    press_f2;
+        bool    long_f1;
+        bool    long_f2;
     } durty;
 } params_t;
 

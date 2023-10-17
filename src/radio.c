@@ -41,6 +41,7 @@ static radio_state_t    state = RADIO_RX;
 static uint64_t         now_time;
 static uint64_t         prev_time;
 static uint64_t         idle_time;
+static bool             mute = false;
 
 static void update_agc_time();
 
@@ -83,7 +84,7 @@ bool radio_tick() {
             case RADIO_TX:
                 if (!pack->flag.tx) {
                     state = RADIO_RX;
-                    event_send(lv_scr_act(), EVENT_RADIO_RX, NULL);
+                    event_send(main_obj, EVENT_RADIO_RX, NULL);
                 } else {
                     tx_info_update(pack->tx_power * 0.1f, pack->vswr * 0.1f, pack->alc_level * 0.1f);
                 }
@@ -280,6 +281,7 @@ void radio_init(lv_obj_t *obj) {
     x6100_control_cmd(x6100_xit, params.xit);
     x6100_control_linein_set(params.line_in);
     x6100_control_lineout_set(params.line_out);
+    x6100_control_cmd(x6100_monilevel, params.moni);
 
     prev_time = get_time();
     idle_time = prev_time;
@@ -321,6 +323,8 @@ uint16_t radio_change_vol(int16_t df) {
         return params.vol;
     }
     
+    mute = false;
+    
     params_lock();
     params.vol = limit(params.vol + df, 0, 55);
     params_unlock(&params.durty.vol);
@@ -330,6 +334,27 @@ uint16_t radio_change_vol(int16_t df) {
     radio_unlock();
     
     return params.vol;
+}
+
+void radio_change_mute() {
+    mute = !mute;
+    x6100_control_rxvol_set(mute ? 0 : params.vol);
+}
+
+uint16_t radio_change_moni(int16_t df) {
+    if (df == 0) {
+        return params.moni;
+    }
+    
+    params_lock();
+    params.moni = limit(params.moni + df, 0, 100);
+    params_unlock(&params.durty.moni);
+
+    radio_lock();
+    x6100_control_cmd(x6100_monilevel, params.moni);
+    radio_unlock();
+    
+    return params.moni;
 }
 
 uint16_t radio_change_rfg(int16_t df) {
