@@ -82,7 +82,7 @@ static void tx_info_draw_cb(lv_event_t * e) {
     area.y2 = y1 + 32;
 
     for (uint16_t i = 0; i < count; i++) {
-        rect_dsc.bg_color = lv_color_hex(0xAAAAAA);
+        rect_dsc.bg_color = lv_color_hex(0x00BB00);
         
         area.x1 = x1 + 30 + i * slice;
         area.x2 = area.x1 + slice - 3;
@@ -105,7 +105,7 @@ static void tx_info_draw_cb(lv_event_t * e) {
         float s = i * (max_swr - min_swr) / (len / slice) + min_swr;
     
         if (s <= 2.0f) {
-            rect_dsc.bg_color = lv_color_hex(0xAAAAAA);
+            rect_dsc.bg_color = lv_color_hex(0x00BB00);
         } else if (s <= 3.0f) {
             rect_dsc.bg_color = lv_color_hex(0xAAAA00);
         } else {
