@@ -12,6 +12,7 @@
 #include <stdbool.h>
 
 #include <aether_radio/x6100_control/control.h>
+#include "ft8/constants.h"
 #include "bands.h"
 #include "radio.h"
 #include "clock.h"
@@ -36,6 +37,7 @@ typedef struct {
 
 typedef struct {
     uint64_t        freq;
+    bool            shift;
     x6100_att_t     att;
     x6100_pre_t     pre;
     x6100_mode_t    mode;
@@ -58,6 +60,7 @@ typedef struct {
     bool            split;
     int16_t         grid_min;
     int16_t         grid_max;
+    char            label[64];
 
     /* durty flags */
     
@@ -66,6 +69,7 @@ typedef struct {
         bool    split;
         bool    grid_min;
         bool    grid_max;
+        bool    label;
     } durty;
 } params_band_t;
 
@@ -88,8 +92,10 @@ typedef enum {
     ACTION_APP_SWRSCAN,
     ACTION_APP_GPS,
     ACTION_APP_SETTINGS,
-    ACTION_APP_RECORDER
+    ACTION_APP_RECORDER,
+    ACTION_APP_QTH
 } press_action_t;
+
 
 typedef struct {
     uint64_t            vol_modes;
@@ -108,7 +114,7 @@ typedef struct {
 
     /* radio */
     
-    uint8_t             band;
+    uint16_t            band;
     int16_t             vol;
     int16_t             rfg;
     uint8_t             sql;
@@ -206,7 +212,13 @@ typedef struct {
 
     bool                swrscan_linear;
     uint32_t            swrscan_span;
+
+    /* FT8 */
     
+    bool                ft8_show_all;
+    ftx_protocol_t      ft8_protocol;
+    uint8_t             ft8_band;
+
     /* Long press actions */
     
     uint8_t             long_gen;
@@ -222,6 +234,13 @@ typedef struct {
     uint8_t             press_f2;
     uint8_t             long_f1;
     uint8_t             long_f2;
+    
+    /* Audio play/rec */
+
+    uint16_t            play_gain;
+    uint16_t            rec_gain;
+    
+    char                qth[7];
     
     /* durty flags */
     
@@ -307,6 +326,10 @@ typedef struct {
         bool    swrscan_linear;
         bool    swrscan_span;
 
+        bool    ft8_show_all;
+        bool    ft8_protocol;
+        bool    ft8_band;
+
         bool    long_gen;
         bool    long_app;
         bool    long_key;
@@ -318,12 +341,32 @@ typedef struct {
         bool    press_f2;
         bool    long_f1;
         bool    long_f2;
+
+        bool    play_gain;
+        bool    rec_gain;
+
+        bool    qth;
     } durty;
 } params_t;
+
+typedef struct {
+    uint64_t        from;
+    uint64_t        to;
+    uint64_t        shift;
+    
+    struct {
+        bool        from;
+        bool        to;
+        bool        shift;
+    } durty;
+} transverter_t;
+
+#define TRANSVERTER_NUM 2
 
 extern params_t params;
 extern params_band_t params_band;
 extern params_mode_t params_mode;
+extern transverter_t params_transverter[TRANSVERTER_NUM];
 
 void params_init();
 void params_lock();

@@ -23,6 +23,8 @@
 #include "bands.h"
 #include "info.h"
 #include "pannel.h"
+#include "main_screen.h"
+#include "msg.h"
 
 static lv_obj_t *text;
 
@@ -74,30 +76,12 @@ static void construct_cb(lv_obj_t *parent) {
 
 static void enter_freq() {
     const char* str = lv_textarea_get_text(text);
-    float       f = atof(str);
+    uint64_t    f = atof(str) * 1000000L;
     
-    if (f > 1.0f && f < 55.0f) {
-        x6100_vfo_t vfo = params_band.vfo;
-        uint64_t    prev_freq = params_band.vfo_x[vfo].freq;
-        uint64_t    freq = f * 1000000L;
-    
-        params.freq_band = bands_find(freq);
-    
-        if (params.freq_band) {
-            if (params.freq_band->type != 0) {
-                if (params.freq_band->id != params.band) {
-                    params_band_freq_set(prev_freq);
-                    bands_activate(params.freq_band, &freq);
-                    info_params_set();
-                    pannel_visible();
-                }
-            } else {
-                params.freq_band = NULL;
-            }
-        }
-
-        radio_set_freq(freq);
-        event_send(lv_scr_act(), EVENT_SCREEN_UPDATE, NULL);
+    if (radio_check_freq(f, NULL)) {
+        main_screen_set_freq(f);
+    } else {
+        msg_set_text_fmt("Incorrect freq");
     }
 }
 
@@ -105,6 +89,10 @@ static void key_cb(lv_event_t * e) {
     uint32_t key = *((uint32_t *)lv_event_get_param(e));
 
     switch (key) {
+        case LV_KEY_ESC:
+            dialog_destruct(&dialog);
+            break;
+
         case HKEY_FINP:
         case LV_KEY_ENTER:
             enter_freq();

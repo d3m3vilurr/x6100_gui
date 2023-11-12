@@ -16,9 +16,16 @@
 #define RADIO_SAMPLES   (512)
 
 typedef enum {
+    /* Loop by keys */
+
     RADIO_MODE_AM = 0,
     RADIO_MODE_CW,
-    RADIO_MODE_SSB
+    RADIO_MODE_SSB,
+
+    /* Direct set */
+
+    RADIO_MODE_USB,
+    RADIO_MODE_LSB
 } radio_mode_t;
 
 typedef enum {
@@ -45,10 +52,12 @@ bool radio_tick();
 radio_state_t radio_get_state();
 
 void radio_set_freq(uint64_t freq);
+bool radio_check_freq(uint64_t freq, uint64_t *shift);
 uint64_t radio_change_freq(int32_t df, uint64_t *prev_freq);
 
 void radio_set_mode(x6100_vfo_t vfo,  x6100_mode_t mode);
 void radio_change_mode(radio_mode_t select);
+void radio_restore_mode(x6100_mode_t mode);
 x6100_mode_t radio_current_mode();
 
 x6100_vfo_t radio_set_vfo(x6100_vfo_t vfo);
@@ -101,6 +110,7 @@ void radio_start_atu();
 void radio_load_atu();
 
 bool radio_start_swrscan();
+void radio_stop_swrscan();
 
 void radio_vfo_set();
 void radio_mode_set();

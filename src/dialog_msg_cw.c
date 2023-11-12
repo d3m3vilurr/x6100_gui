@@ -24,6 +24,7 @@
 #include "cw_encoder.h"
 #include "msg.h"
 #include "buttons.h"
+#include "main_screen.h"
 
 static uint32_t         *ids = NULL;
 
@@ -54,7 +55,7 @@ static void reset() {
 
     ids = NULL;
     table_rows = 0;
-    lv_table_set_row_cnt(table, 0);
+    lv_table_set_row_cnt(table, 1);
 }
 
 static void tx_cb(lv_event_t * e) {
@@ -102,6 +103,7 @@ static void construct_cb(lv_obj_t *parent) {
     ids = NULL;
     
     params_msg_cw_load();
+    main_screen_lock_mode(true);
 }
 
 static void destruct_cb() {
@@ -111,12 +113,17 @@ static void destruct_cb() {
     
     cw_encoder_stop();
     textarea_window_close();
+    main_screen_lock_mode(false);
 }
 
 static void key_cb(lv_event_t * e) {
     uint32_t key = *((uint32_t *)lv_event_get_param(e));
 
     switch (key) {
+        case LV_KEY_ESC:
+            dialog_destruct(&dialog);
+            break;
+
         case KEYBOARD_F4:
             dialog_msg_cw_edit_cb(e);
             break;

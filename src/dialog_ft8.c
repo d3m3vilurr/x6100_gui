@@ -24,6 +24,9 @@
 #include "keyboard.h"
 #include "events.h"
 #include "radio.h"
+#include "buttons.h"
+#include "main_screen.h"
+#include "qth.h"
 
 #include "ft8/unpack.h"
 #include "ft8/ldpc.h"
@@ -42,6 +45,9 @@
 #define FREQ_OSR        2
 #define TIME_OSR        4
 
+#define FT8_BANDS       10
+#define FT4_BANDS       8
+
 typedef enum {
     RX_IDLE = 0,
     RX_PROCESS,
@@ -53,8 +59,14 @@ typedef enum {
 } ft8_msg_type_t;
 
 typedef struct {
+    int16_t         snr;
+    int16_t         dist;
+} ft8_cell_t;
+
+typedef struct {
     ft8_msg_type_t  type;
     char            *msg;
+    ft8_cell_t      *cell;
 } ft8_msg_t;
 
 static ft8_state_t          state = FT8_OFF;
@@ -76,7 +88,6 @@ static complex float        *freq_buf;
 static windowcf             frame_window;
 static fftplan              fft;
 
-static ftx_protocol_t       protocol = PROTO_FT8;
 static float                symbol_period;
 static uint32_t             block_size;
 static uint32_t             subblock_size;
@@ -94,6 +105,16 @@ static void construct_cb(lv_obj_t *parent);
 static void key_cb(lv_event_t * e);
 static void destruct_cb();
 static void * decode_thread(void *arg);
+
+static void show_all_cb(lv_event_t * e);
+static void show_cq_cb(lv_event_t * e);
+static void mode_ft8_cb(lv_event_t * e);
+static void mode_ft4_cb(lv_event_t * e);
+
+static button_item_t button_show_all = { .label = "Show\nAll", .press = show_all_cb };
+static button_item_t button_show_cq = { .label = "Show\nCQ", .press = show_cq_cb };
+static button_item_t button_mode_ft8 = { .label = "Mode\nFT8", .press = mode_ft8_cb };
+static button_item_t button_mode_ft4 = { .label = "Mode\nFT4", .press = mode_ft4_cb };
 
 static dialog_t             dialog = {
     .run = false,
@@ -114,7 +135,7 @@ static void init() {
 
     float   slot_time;
     
-    switch (protocol) {
+    switch (params.ft8_protocol) {
         case PROTO_FT4:
             slot_time = FT4_SLOT_TIME;
             symbol_period = FT4_SYMBOL_PERIOD;
@@ -142,7 +163,7 @@ static void init() {
     wf.freq_osr = FREQ_OSR;
     wf.block_stride = TIME_OSR * FREQ_OSR * num_bins;
     wf.mag = (uint8_t *) malloc(mag_size);
-    wf.protocol = protocol;
+    wf.protocol = params.ft8_protocol;
 
     /* DSP */
     
@@ -195,7 +216,7 @@ static void done() {
     free(rx_window);
 }
 
-static void send_msg(ft8_msg_type_t type, const char * fmt, ...) {
+static void send_info(const char * fmt, ...) {
     va_list     args;
     char        buf[128];
     ft8_msg_t   *msg = malloc(sizeof(ft8_msg_t));
@@ -204,8 +225,43 @@ static void send_msg(ft8_msg_type_t type, const char * fmt, ...) {
     vsnprintf(buf, sizeof(buf), fmt, args);
     va_end(args);
 
-    msg->type = type;
+    msg->type = MSG_RX_INFO;
     msg->msg = strdup(buf);
+    msg->cell = NULL;
+
+    event_send(table, EVENT_FT8_MSG, msg);
+}
+
+static const char * find_qth(const char *str) {
+    char *ptr = rindex(str, ' ');
+    
+    if (ptr) {
+        ptr++;
+        
+        if (strcmp(ptr, "RR73") != 0 && grid_check(ptr)) {
+            return ptr;
+        }
+    }
+    
+    return NULL;
+}
+
+static void send_text(int16_t snr, const char * text) {
+    ft8_msg_t   *msg = malloc(sizeof(ft8_msg_t));
+
+    msg->type = MSG_RX_MSG;
+    msg->msg = strdup(text);
+
+    msg->cell = lv_mem_alloc(sizeof(ft8_cell_t));
+    msg->cell->snr = snr;
+
+    if (params.qth[0] != 0) {
+        const char *qth = find_qth(text);
+            
+        msg->cell->dist = qth ? grid_dist(qth) : 0;
+    } else {
+        msg->cell->dist = 0;
+    }
 
     event_send(table, EVENT_FT8_MSG, msg);
 }
@@ -250,7 +306,9 @@ static void decode() {
             memcpy(&decoded[idx_hash], &message, sizeof(message));
             decoded_hashtable[idx_hash] = &decoded[idx_hash];
 
-            send_msg(MSG_RX_MSG, "%s", message.text);
+            if (params.ft8_show_all || strncmp(message.text, "CQ", 2) == 0) {
+                send_text(cand->snr, message.text);
+            }
         }
     }
 }
@@ -321,11 +379,47 @@ static void * decode_thread(void *arg) {
             if (rx_state == RX_IDLE) {
                 now = time(NULL);
                 tm = localtime(&now);
-
-                if (tm->tm_sec % 15 == 0) {
+                
+                bool start = false;
+                
+                switch (params.ft8_protocol) {
+                    case PROTO_FT4:
+                        switch (tm->tm_sec) {
+                            case 0 ... 1:
+                            case 7 ... 8:
+                            case 15 ... 16:
+                            case 22 ... 23:
+                            case 30 ... 31:
+                            case 37 ... 38:
+                            case 45 ... 46:
+                            case 52 ... 53:
+                                start = true;
+                                break;
+                                
+                            default:
+                                start = false;
+                        }
+                        break;
+                        
+                    case PROTO_FT8:
+                        switch (tm->tm_sec) {
+                            case 0 ... 1:
+                            case 15 ... 16:
+                            case 30 ... 31:
+                            case 45 ... 46:
+                                start = true;
+                                break;
+                                
+                            default:
+                                start = false;
+                        }
+                        break;
+                }
+                
+                if (start) {
                     timestamp = *tm;
                     rx_state = RX_PROCESS;
-                    send_msg(MSG_RX_INFO, "RX %02i:%02i:%02i", timestamp.tm_hour, timestamp.tm_min, timestamp.tm_sec);
+                    send_info("RX %s %02i:%02i:%02i", params_band.label, timestamp.tm_hour, timestamp.tm_min, timestamp.tm_sec);
                 }
             }
         
@@ -376,6 +470,10 @@ static void add_msg_cb(lv_event_t * e) {
     }
     
     lv_table_add_cell_ctrl(table, table_rows, 0, ctrl);
+
+    if (msg->cell) {
+        lv_table_set_cell_user_data(table, table_rows, 0, msg->cell);
+    }
     
     if (scroll) {
         int32_t *c = malloc(sizeof(int32_t));
@@ -387,7 +485,7 @@ static void add_msg_cb(lv_event_t * e) {
     table_rows++;
 }
 
-static void draw_part_event_cb(lv_event_t * e) {
+static void draw_part_begin_cb(lv_event_t * e) {
     lv_obj_t                *obj = lv_event_get_target(e);
     lv_obj_draw_part_dsc_t  *dsc = lv_event_get_draw_part_dsc(e);
 
@@ -405,6 +503,45 @@ static void draw_part_event_cb(lv_event_t * e) {
             if (strncmp(str, "CQ", 2) == 0) {
                 dsc->rect_dsc->bg_color = lv_color_hex(0x00FF00);
                 dsc->rect_dsc->bg_opa = 64;
+            }
+        }
+    }
+}
+
+
+static void draw_part_end_cb(lv_event_t * e) {
+    lv_obj_t                *obj = lv_event_get_target(e);
+    lv_obj_draw_part_dsc_t  *dsc = lv_event_get_draw_part_dsc(e);
+
+    if (dsc->part == LV_PART_ITEMS) {
+        uint32_t row = dsc->id / lv_table_get_col_cnt(obj);
+        uint32_t col = dsc->id - row * lv_table_get_col_cnt(obj);
+
+        if (lv_table_has_cell_ctrl(obj, row, col, LV_TABLE_CELL_CTRL_CUSTOM_2)) {    /* RX MSG */
+            char                buf[64];
+            const lv_coord_t    cell_top = lv_obj_get_style_pad_top(obj, LV_PART_ITEMS);
+            const lv_coord_t    cell_bottom = lv_obj_get_style_pad_bottom(obj, LV_PART_ITEMS);
+            lv_area_t           area;
+
+            dsc->label_dsc->align = LV_TEXT_ALIGN_RIGHT;
+
+            area.y1 = dsc->draw_area->y1 + cell_top;
+            area.y2 = dsc->draw_area->y2 - cell_bottom;
+
+            area.x2 = dsc->draw_area->x2 - 15;
+            area.x1 = area.x2 - 120;
+
+            ft8_cell_t *cell = lv_table_get_cell_user_data(obj, row, col);
+            
+            snprintf(buf, sizeof(buf), "%i dB", cell->snr);
+            lv_draw_label(dsc->draw_ctx, dsc->label_dsc, &area, buf, NULL);
+
+            if (cell->dist > 0) {
+                area.x2 = area.x1 - 10;
+                area.x1 = area.x2 - 200;
+                
+                snprintf(buf, sizeof(buf), "%i km", cell->dist);
+                lv_draw_label(dsc->draw_ctx, dsc->label_dsc, &area, buf, NULL);
             }
         }
     }
@@ -442,10 +579,95 @@ static void destruct_cb() {
     
     firdecim_crcf_destroy(decim);
     free(audio_buf);
+
+    mem_load(MEM_BACKUP_ID);
+
+    main_screen_lock_mode(false);
+    main_screen_lock_freq(false);
+    main_screen_lock_band(false);
+}
+
+static void load_band() {
+    uint16_t mem_id = 0;
+    
+    switch (params.ft8_protocol) {
+        case PROTO_FT8:
+            mem_id = MEM_FT8_ID;
+            
+            if (params.ft8_band > FT8_BANDS - 1) {
+                params.ft8_band = FT8_BANDS - 1;
+            }
+            break;
+            
+        case PROTO_FT4:
+            mem_id = MEM_FT4_ID;
+
+            if (params.ft8_band > FT4_BANDS - 1) {
+                params.ft8_band = FT4_BANDS - 1;
+            }
+            break;
+    }
+    
+    mem_load(mem_id + params.ft8_band);
+}
+
+static void clean() {
+    reset();
+    rx_state = RX_IDLE;
+
+    lv_table_set_row_cnt(table, 1);
+    lv_table_set_cell_value(table, 0, 0, "Wait sync");
+    lv_table_add_cell_ctrl(table, 0, 0, LV_TABLE_CELL_CTRL_CUSTOM_1);
+    lv_table_clear_cell_ctrl(table, 0, 0, LV_TABLE_CELL_CTRL_CUSTOM_2);
+
+    table_rows = 0;
+
+    int32_t *c = malloc(sizeof(int32_t));
+    *c = LV_KEY_UP;
+        
+    lv_event_send(table, LV_EVENT_KEY, c);
+}
+
+static void band_cb(lv_event_t * e) {
+    int band = params.ft8_band;
+    int max_band = 0;
+    
+    switch (params.ft8_protocol) {
+        case PROTO_FT8:
+            max_band = FT8_BANDS - 1;
+            break;
+            
+        case PROTO_FT4:
+            max_band = FT4_BANDS - 1;
+            break;
+    }
+
+    if (lv_event_get_code(e) == EVENT_BAND_UP) {
+        band++;
+        
+        if (band > max_band) {
+            band = 0;
+        }
+    } else {
+        band--;
+        
+        if (band < 0) {
+            band = max_band;
+        }
+    }
+    
+    params_lock();
+    params.ft8_band = band;
+    params_unlock(&params.durty.ft8_band);
+    load_band();
+    clean();    
 }
 
 static void construct_cb(lv_obj_t *parent) {
     dialog.obj = dialog_init(parent);
+
+    lv_obj_add_event_cb(dialog.obj, band_cb, EVENT_BAND_UP, NULL);
+    lv_obj_add_event_cb(dialog.obj, band_cb, EVENT_BAND_DOWN, NULL);
 
     decim = firdecim_crcf_create_kaiser(DECIM, 16, 40.0f);
     audio_buf = cbuffercf_create(AUDIO_CAPTURE_RATE);
@@ -456,7 +678,8 @@ static void construct_cb(lv_obj_t *parent) {
     lv_obj_add_event_cb(table, add_msg_cb, EVENT_FT8_MSG, NULL);
     lv_obj_add_event_cb(table, selected_msg_cb, LV_EVENT_VALUE_CHANGED, NULL);
     lv_obj_add_event_cb(table, key_cb, LV_EVENT_KEY, NULL);
-    lv_obj_add_event_cb(table, draw_part_event_cb, LV_EVENT_DRAW_PART_BEGIN, NULL);
+    lv_obj_add_event_cb(table, draw_part_begin_cb, LV_EVENT_DRAW_PART_BEGIN, NULL);
+    lv_obj_add_event_cb(table, draw_part_end_cb, LV_EVENT_DRAW_PART_END, NULL);
 
     lv_obj_set_size(table, 775, 325);
     
@@ -476,13 +699,81 @@ static void construct_cb(lv_obj_t *parent) {
     lv_obj_set_style_bg_color(table, lv_color_white(), LV_PART_ITEMS | LV_STATE_EDITED);
     lv_obj_set_style_bg_opa(table, 128, LV_PART_ITEMS | LV_STATE_EDITED);
 
+    lv_table_set_cell_value(table, 0, 0, "Wait sync");
+    lv_table_add_cell_ctrl(table, 0, 0, LV_TABLE_CELL_CTRL_CUSTOM_1);
+
     lv_group_add_obj(keyboard_group, table);
     lv_group_set_editing(keyboard_group, true);
 
     lv_obj_center(table);
     table_rows = 0;
 
+    if (params.ft8_show_all) {
+        buttons_load(0, &button_show_all);
+    } else {
+        buttons_load(0, &button_show_cq);
+    }
+
+    switch (params.ft8_protocol) {
+        case PROTO_FT8:
+            buttons_load(1, &button_mode_ft8);
+            break;
+
+        case PROTO_FT4:
+            buttons_load(1, &button_mode_ft4);
+            break;
+    }
+    
+    mem_save(MEM_BACKUP_ID);
+    load_band();
+
+    main_screen_lock_mode(true);
+    main_screen_lock_freq(true);
+    main_screen_lock_band(true);
+
     init();
+}
+
+static void show_all_cb(lv_event_t * e) {
+    params_lock();
+    params.ft8_show_all = false;
+    params_unlock(&params.durty.ft8_show_all);
+
+    buttons_load(0, &button_show_cq);
+}
+
+static void show_cq_cb(lv_event_t * e) {
+    params_lock();
+    params.ft8_show_all = true;
+    params_unlock(&params.durty.ft8_show_all);
+
+    buttons_load(0, &button_show_all);
+}
+
+static void mode_ft8_cb(lv_event_t * e) {
+    params_lock();
+    params.ft8_protocol = PROTO_FT4;
+    params_unlock(&params.durty.ft8_protocol);
+
+    buttons_load(1, &button_mode_ft4);
+
+    done();
+    init();
+    clean();
+    load_band();
+}
+
+static void mode_ft4_cb(lv_event_t * e) {
+    params_lock();
+    params.ft8_protocol = PROTO_FT8;
+    params_unlock(&params.durty.ft8_protocol);
+
+    buttons_load(1, &button_mode_ft8);
+
+    done();
+    init();
+    clean();
+    load_band();
 }
 
 ft8_state_t dialog_ft8_get_state() {

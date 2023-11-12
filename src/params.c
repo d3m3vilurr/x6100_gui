@@ -18,6 +18,7 @@
 #include "mfk.h"
 #include "vol.h"
 #include "dialog_msg_cw.h"
+#include "qth.h"
 
 #define PARAMS_SAVE_TIMEOUT  (3 * 1000)
 
@@ -105,6 +106,10 @@ params_t params = {
     .swrscan_linear         = true,
     .swrscan_span           = 200000,
 
+    .ft8_show_all           = true,
+    .ft8_protocol           = PROTO_FT8,
+    .ft8_band               = 5,
+
     .long_gen               = ACTION_SCREENSHOT,
     .long_app               = ACTION_APP_RECORDER,
     .long_key               = ACTION_NONE,
@@ -116,6 +121,11 @@ params_t params = {
     .press_f2               = ACTION_NONE,
     .long_f1                = ACTION_STEP_DOWN,
     .long_f2                = ACTION_NONE,
+    
+    .play_gain              = 100,
+    .rec_gain               = 100,
+
+    .qth                    = "",
 };
 
 params_band_t params_band = {
@@ -148,6 +158,11 @@ params_mode_t params_mode = {
 
     .freq_step          = 500,
     .spectrum_factor    = 1,
+};
+
+transverter_t params_transverter[TRANSVERTER_NUM] = {
+    { .from = 144000000,    .to = 150000000,    .shift = 116000000 },
+    { .from = 432000000,    .to = 438000000,    .shift = 404000000 }
 };
 
 static pthread_mutex_t  params_mux;
@@ -260,6 +275,8 @@ static void params_mb_load(sqlite3_stmt *stmt) {
     bool copy_mode = true;
     bool copy_agc = true;
 
+    memset(params_band.label, 0, sizeof(params_band.label));
+    
     while (sqlite3_step(stmt) != SQLITE_DONE) {
         const char *name = sqlite3_column_text(stmt, 0);
 
@@ -294,6 +311,8 @@ static void params_mb_load(sqlite3_stmt *stmt) {
             params_band.grid_min = sqlite3_column_int(stmt, 1);
         } else if (strcmp(name, "grid_max") == 0) {
             params_band.grid_max = sqlite3_column_int(stmt, 1);
+        } else if (strcmp(name, "label") == 0) {
+            strncpy(params_band.label, sqlite3_column_text(stmt, 1), sizeof(params_band.label) - 1);
         }
     }
 
@@ -563,6 +582,12 @@ static bool params_load() {
             params.swrscan_linear = sqlite3_column_int(stmt, 1);
         } else if (strcmp(name, "swrscan_span") == 0) {
             params.swrscan_span = sqlite3_column_int(stmt, 1);
+        } else if (strcmp(name, "ft8_show_all") == 0) {
+            params.ft8_show_all = sqlite3_column_int(stmt, 1);
+        } else if (strcmp(name, "ft8_band") == 0) {
+            params.ft8_band = sqlite3_column_int(stmt, 1);
+        } else if (strcmp(name, "ft8_protocol") == 0) {
+            params.ft8_protocol = sqlite3_column_int(stmt, 1);
         } else if (strcmp(name, "long_gen") == 0) {
             params.long_gen = sqlite3_column_int(stmt, 1);
         } else if (strcmp(name, "long_app") == 0) {
@@ -583,6 +608,12 @@ static bool params_load() {
             params.long_f1 = sqlite3_column_int(stmt, 1);
         } else if (strcmp(name, "long_f2") == 0) {
             params.long_f2 = sqlite3_column_int(stmt, 1);
+        } else if (strcmp(name, "play_gain") == 0) {
+            params.play_gain = sqlite3_column_int(stmt, 1);
+        } else if (strcmp(name, "rec_gain") == 0) {
+            params.rec_gain = sqlite3_column_int(stmt, 1);
+        } else if (strcmp(name, "qth") == 0) {
+            qth_set(sqlite3_column_text(stmt, 1));
         }
     }
     
@@ -617,6 +648,16 @@ static void params_write_int(const char *name, int data, bool *durty) {
 static void params_write_int64(const char *name, uint64_t data, bool *durty) {
     sqlite3_bind_text(write_stmt, 1, name, strlen(name), 0);
     sqlite3_bind_int64(write_stmt, 2, data);
+    sqlite3_step(write_stmt);
+    sqlite3_reset(write_stmt);
+    sqlite3_clear_bindings(write_stmt);
+    
+    *durty = false;
+}
+
+static void params_write_text(const char *name, const char *data, bool *durty) {
+    sqlite3_bind_text(write_stmt, 1, name, strlen(name), 0);
+    sqlite3_bind_text(write_stmt, 2, data, strlen(data), 0);
     sqlite3_step(write_stmt);
     sqlite3_reset(write_stmt);
     sqlite3_clear_bindings(write_stmt);
@@ -712,6 +753,10 @@ static void params_save() {
     if (params.durty.swrscan_linear)        params_write_int("swrscan_linear", params.swrscan_linear, &params.durty.swrscan_linear);
     if (params.durty.swrscan_span)          params_write_int("swrscan_span", params.swrscan_span, &params.durty.swrscan_span);
 
+    if (params.durty.ft8_show_all)          params_write_int("ft8_show_all", params.ft8_show_all, &params.durty.ft8_show_all);
+    if (params.durty.ft8_band)              params_write_int("ft8_band", params.ft8_band, &params.durty.ft8_band);
+    if (params.durty.ft8_protocol)          params_write_int("ft8_protocol", params.ft8_protocol, &params.durty.ft8_protocol);
+
     if (params.durty.long_gen)              params_write_int("long_gen", params.long_gen, &params.durty.long_gen);
     if (params.durty.long_app)              params_write_int("long_app", params.long_app, &params.durty.long_app);
     if (params.durty.long_key)              params_write_int("long_key", params.long_key, &params.durty.long_key);
@@ -723,6 +768,77 @@ static void params_save() {
     if (params.durty.press_f2)              params_write_int("press_f2", params.press_f2, &params.durty.press_f2);
     if (params.durty.long_f1)               params_write_int("long_f1", params.long_f1, &params.durty.long_f1);
     if (params.durty.long_f2)               params_write_int("long_f2", params.long_f2, &params.durty.long_f2);
+
+    if (params.durty.play_gain)             params_write_int("play_gain", params.play_gain, &params.durty.play_gain);
+    if (params.durty.rec_gain)              params_write_int("rec_gain", params.rec_gain, &params.durty.rec_gain);
+
+    if (params.durty.qth)                   params_write_text("qth", params.qth, &params.durty.qth);
+
+    params_exec("COMMIT");
+}
+
+/* Transverter */
+
+bool transverter_load() {
+    sqlite3_stmt    *stmt;
+    int             rc;
+    
+    rc = sqlite3_prepare_v2(db, "SELECT * FROM transverter", -1, &stmt, 0);
+    
+    if (rc != SQLITE_OK) {
+        return false;
+    }
+    
+    while (sqlite3_step(stmt) != SQLITE_DONE) {
+        const int       id = sqlite3_column_int(stmt, 0);
+        const char      *name = sqlite3_column_text(stmt, 1);
+        const uint64_t  val = sqlite3_column_int64(stmt, 2);
+
+        if (strcmp(name, "from") == 0) {
+            params_transverter[id].from = val;
+        } else if (strcmp(name, "to") == 0) {
+            params_transverter[id].to = val;
+        } else if (strcmp(name, "shift") == 0) {
+            params_transverter[id].shift = val;
+        }
+    }
+
+    sqlite3_finalize(stmt);
+    return true;
+}
+
+static void transverter_write(sqlite3_stmt *stmt, uint8_t id, const char *name, uint64_t data, bool *durty) {
+    sqlite3_bind_int64(stmt, 1, id);
+    sqlite3_bind_text(stmt, 2, name, strlen(name), 0);
+    sqlite3_bind_int64(stmt, 3, data);
+    sqlite3_step(stmt);
+    sqlite3_reset(stmt);
+    sqlite3_clear_bindings(stmt);
+    
+    *durty = false;
+}
+
+void transverter_save() {
+    sqlite3_stmt    *stmt;
+    int             rc;
+
+    rc = sqlite3_prepare_v2(db, "INSERT INTO transverter(id, name, val) VALUES(?, ?, ?)", -1, &stmt, 0);
+
+    if (rc != SQLITE_OK) {
+        return;
+    }
+
+    if (!params_exec("BEGIN")) {
+        return;
+    }
+    
+    for (uint8_t i = 0; i < TRANSVERTER_NUM; i++) {
+        transverter_t *transverter = &params_transverter[i];
+        
+        if (transverter->durty.from)    transverter_write(stmt, i, "from", transverter->from, &transverter->durty.from);
+        if (transverter->durty.to)      transverter_write(stmt, i, "to", transverter->to, &transverter->durty.to);
+        if (transverter->durty.shift)   transverter_write(stmt, i, "shift", transverter->shift, &transverter->durty.shift);
+    }
 
     params_exec("COMMIT");
 }
@@ -767,6 +883,7 @@ static void * params_thread(void *arg) {
                 params_save();
                 params_band_save();
                 params_mode_save();
+                transverter_save();
             }
         }
         
@@ -791,7 +908,6 @@ void params_init() {
             LV_LOG_ERROR("Prepare write");
         }
 
-
         rc = sqlite3_prepare_v2(db, "INSERT INTO mode_params(mode, name, val) VALUES(?, ?, ?)", -1, &write_mode_stmt, 0);
 
         if (rc != SQLITE_OK) {
@@ -812,6 +928,10 @@ void params_init() {
         
         if (!params_bands_load()) {
             LV_LOG_ERROR("Load bands");
+        }
+
+        if (!transverter_load()) {
+            LV_LOG_ERROR("Load transverter");
         }
     } else {
         LV_LOG_ERROR("Open params.db");

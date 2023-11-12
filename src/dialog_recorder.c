@@ -62,7 +62,7 @@ static dialog_t             dialog = {
 dialog_t                    *dialog_recorder = &dialog;
 
 static void load_table() {
-    lv_table_set_row_cnt(table, 0);
+    lv_table_set_row_cnt(table, 1);
     table_rows = 0;
 
     DIR             *dp;
@@ -137,7 +137,10 @@ static void play_item() {
         int res = sf_read_short(file, samples_buf, BUF_SIZE);
             
         if (res > 0) {
-            audio_play(samples_buf, res);
+            int16_t *samples = audio_gain(samples_buf, res, params.play_gain);
+            
+            audio_play(samples, res);
+            free(samples);
         } else {
             play_state = false;
         }
@@ -250,6 +253,10 @@ static void key_cb(lv_event_t * e) {
     uint32_t key = *((uint32_t *)lv_event_get_param(e));
 
     switch (key) {
+        case LV_KEY_ESC:
+            dialog_destruct(&dialog);
+            break;
+
         case KEY_VOL_LEFT_EDIT:
         case KEY_VOL_LEFT_SELECT:
             radio_change_vol(-1);
