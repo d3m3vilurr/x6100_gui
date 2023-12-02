@@ -14,6 +14,7 @@ typedef enum {
     PAGE_VOL_1 = 0,
     PAGE_VOL_2,
     PAGE_VOL_3,
+    PAGE_VOL_4,
 
     PAGE_MFK_1,
     PAGE_MFK_2,
@@ -51,6 +52,7 @@ typedef void (*hold_cb_t)(void *);
 
 typedef struct {
     char            *label;
+    char            *voice;
     lv_event_cb_t   press;
     hold_cb_t       hold;
     uint16_t        data;

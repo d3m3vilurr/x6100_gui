@@ -47,6 +47,7 @@
 #include "backlight.h"
 #include "buttons.h"
 #include "recorder.h"
+#include "voice.h"
 
 static uint16_t     spectrum_height = (480 / 3);
 static uint16_t     freq_height = 36;
@@ -70,12 +71,14 @@ static void freq_update();
 void mem_load(uint16_t id) {
     params_memory_load(id);
 
-    params.freq_band = bands_find(params_band.vfo_x[params_band.vfo].freq);
-
-    if (params.freq_band) {
-        if (params.freq_band->type != 0) {
-            params.band = params.freq_band->id;
+    if (params_bands_find(params_band.vfo_x[params_band.vfo].freq, &params.freq_band)) {
+        if (params.freq_band.type != 0) {
+            params.band = params.freq_band.id;
+        } else {
+            params.band = -1;
         }
+    } else {
+        params.band = -1;
     }
 
     radio_vfo_set();
@@ -90,6 +93,7 @@ void mem_load(uint16_t id) {
 
     waterfall_clear();
     spectrum_clear();
+    dsp_auto_clear();
     freq_update();
 
     if (strlen(params_band.label) > 0) {
@@ -127,8 +131,12 @@ static void freq_update() {
 
     split_freq(f, &mhz, &khz, &hz);
 
-    if (params.mag_freq) {
-        msg_tiny_set_text_fmt("%i.%03i.%03i", mhz, khz, hz);
+    if (params.mag_freq.x) {
+        if (mhz < 100) {
+            msg_tiny_set_text_fmt("%i.%03i.%03i", mhz, khz, hz);
+        } else {
+            msg_tiny_set_text_fmt("%i.%03i", mhz, khz);
+        }
     }
 
     if (params_band.split) {
@@ -149,19 +157,19 @@ static void freq_update() {
 }
 
 static void check_cross_band(uint64_t freq, uint64_t prev_freq) {
-    params.freq_band = bands_find(freq);
-    
-    if (params.freq_band) {
-        if (params.freq_band->type != 0) {
-            if (params.freq_band->id != params.band) {
+    if (params_bands_find(freq, &params.freq_band)) {
+        if (params.freq_band.type != 0) {
+            if (params.freq_band.id != params.band) {
                 params_band_freq_set(prev_freq);
-                bands_activate(params.freq_band, &freq);
+                bands_activate(&params.freq_band, &freq);
                 info_params_set();
                 pannel_visible();
             }
         } else {
-            params.freq_band = NULL;
+            params.band = -1;
         }
+    } else {
+        params.band = -1;
     }
 }
 
@@ -195,6 +203,7 @@ static void next_freq_step(bool up) {
 
     params_unlock(&params_mode.durty.freq_step);
     msg_set_text_fmt("Freq step: %i Hz", params_mode.freq_step);
+    voice_say_text_fmt("Frequency step %i herz", params_mode.freq_step);
 }
 
 static void apps_disable() {
@@ -218,26 +227,32 @@ void main_screen_app(uint8_t page_app) {
         case PAGE_RTTY:
             rtty_set_state(RTTY_RX);
             pannel_visible();
+            voice_say_text_fmt("Teletype window");
             break;
             
         case PAGE_SETTINGS:
             dialog_construct(dialog_settings, obj);
+            voice_say_text_fmt("Settings window");
             break;
 
         case PAGE_SWRSCAN:
             dialog_construct(dialog_swrscan, obj);
+            voice_say_text_fmt("SWR scan window");
             break;
 
         case PAGE_FT8:
             dialog_construct(dialog_ft8, obj);
+            voice_say_text_fmt("FT8 window");
             break;
 
         case PAGE_GPS:
             dialog_construct(dialog_gps, obj);
+            voice_say_text_fmt("GPS window");
             break;
 
         case PAGE_RECORDER:
             dialog_construct(dialog_recorder, obj);
+            voice_say_text_fmt("Audio recorder window");
             break;
             
         default:
@@ -255,11 +270,21 @@ void main_screen_action(press_action_t action) {
             break;
 
         case ACTION_RECORDER:
-            recorder_set_on(!recorder_is_on());
+            if (recorder_is_on()) {
+                recorder_set_on(false);
+                voice_say_text_fmt("Audio recorder off");
+            } else {
+                voice_say_text_fmt("Audio recorder on");
+                recorder_set_on(true);
+            }
             break;
 
         case ACTION_MUTE:
             radio_change_mute();
+            break;
+
+        case ACTION_VOICE_MODE:
+            voice_change_mode();
             break;
 
         case ACTION_STEP_UP:
@@ -296,6 +321,7 @@ void main_screen_action(press_action_t action) {
 
         case ACTION_APP_QTH:
             dialog_qth();
+            voice_say_text_fmt("QTH window");
             break;
     }
 }
@@ -309,14 +335,14 @@ static void main_screen_keypad_cb(lv_event_t * e) {
                 radio_change_pre();
                 info_params_set();
                 
-                if (params.mag_info) {
+                if (params.mag_info.x) {
                     msg_tiny_set_text_fmt("Pre: %s", info_params_pre() ? "On" : "Off");
                 }
             } else if (keypad->state == KEYPAD_LONG) {
                 radio_change_att();
                 info_params_set();
 
-                if (params.mag_info) {
+                if (params.mag_info.x) {
                     msg_tiny_set_text_fmt("Att: %s", info_params_att() ? "On" : "Off");
                 }
             }
@@ -355,7 +381,7 @@ static void main_screen_keypad_cb(lv_event_t * e) {
                 info_params_set();
                 pannel_visible();
 
-                if (params.mag_info) {
+                if (params.mag_info.x) {
                     msg_tiny_set_text_fmt("%s", info_params_mode());
                 }
             }
@@ -374,7 +400,7 @@ static void main_screen_keypad_cb(lv_event_t * e) {
                 info_params_set();
                 pannel_visible();
 
-                if (params.mag_info) {
+                if (params.mag_info.x) {
                     msg_tiny_set_text_fmt("%s", info_params_mode());
                 }
             }
@@ -393,7 +419,7 @@ static void main_screen_keypad_cb(lv_event_t * e) {
                 info_params_set();
                 pannel_visible();
 
-                if (params.mag_info) {
+                if (params.mag_info.x) {
                     msg_tiny_set_text_fmt("%s", info_params_mode());
                 }
             }
@@ -404,7 +430,7 @@ static void main_screen_keypad_cb(lv_event_t * e) {
                 radio_change_agc();
                 info_params_set();
 
-                if (params.mag_info) {
+                if (params.mag_info.x) {
                     msg_tiny_set_text_fmt("AGC: %s", info_params_agc());
                 }
             } else if (keypad->state == KEYPAD_LONG) {
@@ -412,9 +438,10 @@ static void main_screen_keypad_cb(lv_event_t * e) {
                 info_params_set();
                 waterfall_clear();
                 spectrum_clear();
+                dsp_auto_clear();
                 main_screen_band_set();
 
-                if (params.mag_info) {
+                if (params.mag_info.x) {
                     msg_tiny_set_text_fmt("%s", info_params_vfo());
                 }
             }
@@ -433,7 +460,7 @@ static void main_screen_keypad_cb(lv_event_t * e) {
                 radio_change_atu();
                 info_params_set();
 
-                if (params.mag_info) {
+                if (params.mag_info.x) {
                     msg_tiny_set_text_fmt("ATU: %s", params.atu ? "On" : "Off");
                 }
             } else if (keypad->state == KEYPAD_LONG) {
@@ -487,6 +514,7 @@ static void main_screen_keypad_cb(lv_event_t * e) {
                 mfk_set_mode(MFK_MIN_LEVEL);
                 buttons_unload_page();
                 buttons_load_page(PAGE_VOL_1);
+                voice_say_text_fmt("General menu keys");
             } else if (keypad->state == KEYPAD_LONG) {
                 main_screen_action(params.long_gen);
             }
@@ -497,6 +525,7 @@ static void main_screen_keypad_cb(lv_event_t * e) {
                 apps_disable();
                 buttons_unload_page();
                 buttons_load_page(PAGE_APP_1);
+                voice_say_text_fmt("Application menu keys");
             } else if (keypad->state == KEYPAD_LONG) {
                 main_screen_action(params.long_app);
             }
@@ -507,6 +536,7 @@ static void main_screen_keypad_cb(lv_event_t * e) {
                 apps_disable();
                 buttons_unload_page();
                 buttons_load_page(PAGE_KEY_1);
+                voice_say_text_fmt("CW parameters");
             } else if (keypad->state == KEYPAD_LONG) {
                 main_screen_action(params.long_key);
             }
@@ -523,6 +553,7 @@ static void main_screen_keypad_cb(lv_event_t * e) {
                         pannel_hide();
                         dialog_construct(dialog_msg_cw, obj);
                         buttons_load_page(PAGE_MSG_CW_1);
+                        voice_say_text_fmt("CW messages window");
                         break;
                         
                     case x6100_mode_lsb:
@@ -535,6 +566,7 @@ static void main_screen_keypad_cb(lv_event_t * e) {
                         pannel_hide();
                         dialog_construct(dialog_msg_voice, obj);
                         buttons_load_page(PAGE_MSG_VOICE_1);
+                        voice_say_text_fmt("Voice messages window");
                         break;
                         
                     default:
@@ -551,6 +583,7 @@ static void main_screen_keypad_cb(lv_event_t * e) {
                 apps_disable();
                 buttons_unload_page();
                 buttons_load_page(PAGE_DFN_1);
+                voice_say_text_fmt("DNF parameters");
             } else if (keypad->state == KEYPAD_LONG) {
                 main_screen_action(params.long_dfn);
             }
@@ -568,15 +601,17 @@ static void main_screen_keypad_cb(lv_event_t * e) {
                 info_params_set();
                 waterfall_clear();
                 spectrum_clear();
+                dsp_auto_clear();
                 main_screen_band_set();
 
-                if (params.mag_info) {
+                if (params.mag_info.x) {
                     msg_tiny_set_text_fmt("%s", info_params_vfo());
                 }
             } else if (keypad->state == KEYPAD_LONG) {
                 params_band_vfo_clone();
                 radio_vfo_set();
                 msg_set_text_fmt("Clone VFO %s", params_band.vfo == X6100_VFO_A ? "A->B" : "B->A");
+                voice_say_text_fmt("V F O cloned %s", params_band.vfo == X6100_VFO_A ? "from A to B" : "from B to A");
             }
             break;
 
@@ -584,6 +619,7 @@ static void main_screen_keypad_cb(lv_event_t * e) {
             if (keypad->state == KEYPAD_RELEASE) {
                 backlight_switch();
             } else if (keypad->state == KEYPAD_LONG) {
+                voice_say_text_fmt("Power off");
                 msg_set_text_fmt("Power off");
                 radio_poweroff();
             }
@@ -593,6 +629,7 @@ static void main_screen_keypad_cb(lv_event_t * e) {
             if (keypad->state == KEYPAD_RELEASE) {
                 freq_lock = !freq_lock;
                 freq_update();
+                voice_say_text_fmt("Frequency %s", freq_lock ? "locked" : "unlocked");
             } else if (keypad->state == KEYPAD_LONG) {
                 radio_bb_reset();
                 exit(1);
@@ -646,8 +683,10 @@ static void main_screen_hkey_cb(lv_event_t * e) {
         case HKEY_8:
             if (hkey->state == HKEY_RELEASE) {
                 mem_load(hkey->key - HKEY_1 + 1);
+                voice_say_text_fmt("Memory %i loaded", hkey->key - HKEY_1 + 1);
             } else if (hkey->state == HKEY_LONG) {
                 mem_save(hkey->key - HKEY_1 + 1);
+                voice_say_text_fmt("Memory %i stored", hkey->key - HKEY_1 + 1);
             }
             break;
             
@@ -655,6 +694,7 @@ static void main_screen_hkey_cb(lv_event_t * e) {
             if (hkey->state == HKEY_RELEASE) {
                 freq_lock = !freq_lock;
                 freq_update();
+                voice_say_text_fmt("Frequency %s", freq_lock ? "locked" : "unlocked");
             }
             break;
             
@@ -673,6 +713,7 @@ static void main_screen_hkey_cb(lv_event_t * e) {
                 info_params_set();
                 waterfall_clear();
                 spectrum_clear();
+                dsp_auto_clear();
                 main_screen_band_set();
             }
             break;
@@ -746,6 +787,7 @@ static void main_screen_update_cb(lv_event_t * e) {
 
     waterfall_clear();
     spectrum_clear();
+    dsp_auto_clear();
 }
 
 static void main_screen_atu_update_cb(lv_event_t * e) {
@@ -766,6 +808,7 @@ static void freq_shift(int16_t diff) {
     check_cross_band(freq, prev_freq);
     
     dialog_send(EVENT_FREQ_UPDATE, NULL);
+    voice_say_freq(freq);
 }
 
 static void main_screen_rotary_cb(lv_event_t * e) {
@@ -800,12 +843,12 @@ static void spectrum_key_cb(lv_event_t * e) {
 
         case KEY_VOL_LEFT_EDIT:
         case '[':
-            vol_update(-1);
+            vol_update(-1, false);
             break;
             
         case KEY_VOL_RIGHT_EDIT:
         case ']':
-            vol_update(+1);
+            vol_update(+1, false);
             break;
 
         case KEY_VOL_LEFT_SELECT:
@@ -828,7 +871,7 @@ static void spectrum_key_cb(lv_event_t * e) {
         case LV_KEY_LEFT:
             switch (mfk_state) {
                 case MFK_STATE_EDIT:
-                    mfk_update(-1);
+                    mfk_update(-1, false);
                     break;
                     
                 case MFK_STATE_SELECT:
@@ -840,7 +883,7 @@ static void spectrum_key_cb(lv_event_t * e) {
         case LV_KEY_RIGHT:
             switch (mfk_state) {
                 case MFK_STATE_EDIT:
-                    mfk_update(+1);
+                    mfk_update(+1, false);
                     break;
                     
                 case MFK_STATE_SELECT:
@@ -854,13 +897,15 @@ static void spectrum_key_cb(lv_event_t * e) {
                 switch (vol->mode) {
                     case VOL_EDIT:
                         vol->mode = VOL_SELECT;
+                        voice_say_text_fmt("Selection mode");
                         break;
                         
                     case VOL_SELECT:
                         vol->mode = VOL_EDIT;
+                        voice_say_text_fmt("Edit mode");
                         break;
                 }
-                vol_update(0);
+                vol_update(0, false);
             }
             break;
 
@@ -905,13 +950,15 @@ static void spectrum_pressed_cb(lv_event_t * e) {
     switch (mfk_state) {
         case MFK_STATE_EDIT:
             mfk_state = MFK_STATE_SELECT;
+            voice_say_text_fmt("Selection mode");
             break;
             
         case MFK_STATE_SELECT:
             mfk_state = MFK_STATE_EDIT;
+            voice_say_text_fmt("Edit mode");
             break;
     }
-    mfk_update(0);
+    mfk_update(0, false);
 }
 
 static void keys_enable_cb(lv_timer_t *t) {
@@ -947,18 +994,14 @@ void main_screen_set_freq(uint64_t freq) {
     x6100_vfo_t vfo = params_band.vfo;
     uint64_t    prev_freq = params_band.vfo_x[vfo].freq;
     
-    params.freq_band = bands_find(freq);
-    
-    if (params.freq_band) {
-        if (params.freq_band->type != 0) {
-            if (params.freq_band->id != params.band) {
+    if (params_bands_find(freq, &params.freq_band)) {
+        if (params.freq_band.type != 0) {
+            if (params.freq_band.id != params.band) {
                 params_band_freq_set(prev_freq);
-                bands_activate(params.freq_band, &freq);
+                bands_activate(&params.freq_band, &freq);
                 info_params_set();
                 pannel_visible();
             }
-        } else {
-            params.freq_band = NULL;
         }
     }
 

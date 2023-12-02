@@ -16,6 +16,7 @@
 #include "bands.h"
 #include "radio.h"
 #include "clock.h"
+#include "voice.h"
 
 typedef struct {
     int32_t         filter_low;
@@ -86,6 +87,7 @@ typedef enum {
     ACTION_MUTE,
     ACTION_STEP_UP,
     ACTION_STEP_DOWN,
+    ACTION_VOICE_MODE,
 
     ACTION_APP_RTTY = 100,
     ACTION_APP_FT8,
@@ -96,6 +98,53 @@ typedef enum {
     ACTION_APP_QTH
 } press_action_t;
 
+/* Params items */
+
+typedef struct {
+    char        *name;
+    char        *voice;
+    bool        x;
+    bool        durty;
+} params_bool_t;
+
+typedef struct {
+    char        *name;
+    char        *voice;
+    float       x;
+    bool        durty;
+} params_float_t;
+
+typedef struct {
+    char        *name;
+    char        *voice;
+    uint8_t     x;
+    uint8_t     min;
+    uint8_t     max;
+    bool        durty;
+} params_uint8_t;
+
+typedef struct {
+    char        *name;
+    char        *voice;
+    int8_t      x;
+    bool        durty;
+} params_int8_t;
+
+typedef struct {
+    char        *name;
+    char        *voice;
+    int16_t     x;
+    bool        durty;
+} params_int16_t;
+
+typedef struct {
+    char        *name;
+    char        *voice;
+    uint64_t    x;
+    bool        durty;
+} params_uint64_t;
+
+/* Params */
 
 typedef struct {
     uint64_t            vol_modes;
@@ -110,11 +159,11 @@ typedef struct {
 
     /* band info */
     
-    band_t              *freq_band;
+    band_t              freq_band;
 
     /* radio */
     
-    uint16_t            band;
+    int16_t             band;
     int16_t             vol;
     int16_t             rfg;
     uint8_t             sql;
@@ -133,6 +182,7 @@ typedef struct {
     uint8_t             line_in;
     uint8_t             line_out;
     int16_t             moni;
+    params_bool_t       spmode;
     
     /* DSP */
     
@@ -167,9 +217,13 @@ typedef struct {
     uint16_t            spectrum_peak_hold;
     float               spectrum_peak_speed;
     bool                spectrum_filled;
-    bool                mag_freq;
-    bool                mag_info;
-    bool                mag_alc;
+    params_bool_t       spectrum_auto_min;
+    params_bool_t       spectrum_auto_max;
+    params_bool_t       waterfall_auto_min;
+    params_bool_t       waterfall_auto_max;
+    params_bool_t       mag_freq;
+    params_bool_t       mag_info;
+    params_bool_t       mag_alc;
     clock_view_t        clock_view;
     uint8_t             clock_time_timeout;     /* seconds */
     uint8_t             clock_power_timeout;    /* seconds */
@@ -240,6 +294,14 @@ typedef struct {
     uint16_t            play_gain;
     uint16_t            rec_gain;
     
+    /* Voice */
+
+    voice_mode_t        voice_mode;
+    params_uint8_t      voice_lang;
+    params_uint8_t      voice_rate;
+    params_uint8_t      voice_pitch;
+    params_uint8_t      voice_volume;
+    
     char                qth[7];
     
     /* durty flags */
@@ -293,9 +355,6 @@ typedef struct {
         bool    spectrum_peak_hold;
         bool    spectrum_peak_speed;
         bool    spectrum_filled;
-        bool    mag_freq;
-        bool    mag_info;
-        bool    mag_alc;
         bool    clock_view;
         bool    clock_time_timeout;
         bool    clock_power_timeout;
@@ -345,6 +404,7 @@ typedef struct {
         bool    play_gain;
         bool    rec_gain;
 
+        bool    voice_mode;
         bool    qth;
     } durty;
 } params_t;
@@ -372,6 +432,11 @@ void params_init();
 void params_lock();
 void params_unlock(bool *durty);
 
+void params_bool_set(params_bool_t *var, bool x);
+void params_uint8_set(params_uint8_t *var, uint8_t x);
+
+uint8_t params_uint8_change(params_uint8_t *var, int16_t df);
+
 void params_band_save();
 void params_band_load();
 
@@ -392,3 +457,7 @@ void params_msg_cw_load();
 void params_msg_cw_new(const char *val);
 void params_msg_cw_edit(uint32_t id, const char *val);
 void params_msg_cw_delete(uint32_t id);
+
+band_t * params_bands_find_all(uint64_t freq, int32_t half_width, uint16_t *count);
+bool params_bands_find(uint64_t freq, band_t *band);
+bool params_bands_find_next(uint64_t freq, bool up, band_t *band);

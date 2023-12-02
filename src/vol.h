@@ -9,6 +9,7 @@
 #pragma once
 
 #include <stdint.h>
+#include <stdbool.h>
 
 typedef enum {
     VOL_VOL = 0,
@@ -21,10 +22,15 @@ typedef enum {
     VOL_MIC,
     VOL_IMIC,
     VOL_MONI,
+    VOL_SPMODE,
+    VOL_VOICE_LANG,
+    VOL_VOICE_RATE,
+    VOL_VOICE_PITCH,
+    VOL_VOICE_VOLUME,
     
     VOL_LAST
 } vol_mode_t;
 
-void vol_update(int16_t diff);
+void vol_update(int16_t diff, bool voice);
 void vol_press(int16_t dir);
 void vol_set_mode(vol_mode_t mode);
