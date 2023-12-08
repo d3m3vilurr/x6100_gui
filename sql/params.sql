@@ -59,6 +59,8 @@ CREATE TABLE msg_cw(
     val         INTEGER
 );
 
+.import msg_cw.csv msg_cw
+
 CREATE TABLE transverter(
     id          INTEGER,
     name        TEXT,
