@@ -3,7 +3,6 @@ brightness_timeout	20
 iambic_mode	1
 key_mode	2
 key_speed	16
-moni	0
 rfg	63
 spectrum_auto_min	0
 spectrum_beta	70
