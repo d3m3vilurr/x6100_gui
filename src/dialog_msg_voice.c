@@ -211,11 +211,9 @@ static void * send_thread(void *arg) {
 
     msg_set_text_fmt("Sending message");
 
-    radio_set_moni(params.moni);
     radio_set_ptt(true);
     play_item();
     radio_set_ptt(false);
-    radio_set_moni(0);
 
     if (dialog.run) {
         buttons_unload_page();
@@ -236,11 +234,9 @@ static void * beacon_thread(void *arg) {
         
             case VOICE_BEACON_PLAY:
                 msg_set_text_fmt("Sending message");
-                radio_set_moni(params.moni);
                 radio_set_ptt(true);
                 play_item();
                 radio_set_ptt(false);
-                radio_set_moni(0);
                 break;
             
             case VOICE_BEACON_IDLE:

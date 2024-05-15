@@ -288,8 +288,7 @@ void radio_init(lv_obj_t *obj) {
     x6100_control_cmd(x6100_xit, params.xit);
     x6100_control_linein_set(params.line_in);
     x6100_control_lineout_set(params.line_out);
-    //x6100_control_cmd(x6100_monilevel, params.moni);
-    x6100_control_cmd(x6100_monilevel, 0);
+    x6100_control_cmd(x6100_monilevel, params.moni);
 
     prev_time = get_time();
     idle_time = prev_time;
@@ -386,16 +385,10 @@ uint16_t radio_change_moni(int16_t df) {
     params_unlock(&params.durty.moni);
 
     radio_lock();
-    //x6100_control_cmd(x6100_monilevel, params.moni);
+    x6100_control_cmd(x6100_monilevel, params.moni);
     radio_unlock();
     
     return params.moni;
-}
-
-void radio_set_moni(int16_t moni) {
-    radio_lock();
-    x6100_control_cmd(x6100_monilevel, moni);
-    radio_unlock();
 }
 
 bool radio_change_spmode(int16_t df) {
