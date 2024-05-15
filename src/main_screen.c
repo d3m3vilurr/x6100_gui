@@ -44,6 +44,7 @@
 #include "dialog_gps.h"
 #include "dialog_qth.h"
 #include "dialog_recorder.h"
+#include "dialog_callsign.h"
 #include "backlight.h"
 #include "buttons.h"
 #include "recorder.h"
@@ -287,6 +288,10 @@ void main_screen_action(press_action_t action) {
             voice_change_mode();
             break;
 
+        case ACTION_BAT_INFO:
+            clock_say_bat_info();
+            break;
+
         case ACTION_STEP_UP:
             next_freq_step(true);
             break;
@@ -322,6 +327,11 @@ void main_screen_action(press_action_t action) {
         case ACTION_APP_QTH:
             dialog_construct(dialog_qth, obj);
             voice_say_text_fmt("QTH window");
+            break;
+
+        case ACTION_APP_CALLSIGN:
+            dialog_construct(dialog_callsign, obj);
+            voice_say_text_fmt("Callsign window");
             break;
     }
 }
@@ -794,6 +804,23 @@ static void main_screen_atu_update_cb(lv_event_t * e) {
     info_atu_update();
 }
 
+static uint16_t freq_accel(uint16_t diff) {
+    if (diff < 3) {
+        return 1;
+    }
+
+    switch (params.freq_accel.x) {
+        case FREQ_ACCEL_NONE:
+            return 1;
+            
+        case FREQ_ACCEL_LITE:
+            return (diff < 6) ? 5 : 10;
+            
+        case FREQ_ACCEL_STRONG:
+            return (diff < 6) ? 10 : 30;
+    }
+}
+
 static void freq_shift(int16_t diff) {
     if (freq_lock) {
         return;
@@ -801,7 +828,7 @@ static void freq_shift(int16_t diff) {
     
     uint64_t        freq, prev_freq;
 
-    freq = radio_change_freq(diff * params_mode.freq_step, &prev_freq);
+    freq = radio_change_freq(diff * params_mode.freq_step * freq_accel(abs(diff)), &prev_freq);
     waterfall_change_freq(freq - prev_freq);
     spectrum_change_freq(freq - prev_freq);
     freq_update();
@@ -815,6 +842,7 @@ static void main_screen_rotary_cb(lv_event_t * e) {
     int32_t     diff = lv_event_get_param(e);
     
     freq_shift(diff);
+    dialog_rotary(diff);
 }
 
 static void spectrum_key_cb(lv_event_t * e) {

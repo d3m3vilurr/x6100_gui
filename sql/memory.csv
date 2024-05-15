@@ -82,3 +82,7 @@
 207	label	FT4 10m
 207	vfoa_freq	28180000
 207	vfoa_mode	3
+208	vfo	0
+208	label	FT4 6m
+208	vfoa_freq	50318000
+208	vfoa_mode	2

@@ -59,6 +59,7 @@ static dialog_t     dialog = {
     .run = false,
     .construct_cb = construct_cb,
     .destruct_cb = NULL,
+    .audio_cb = NULL,
     .key_cb = key_cb
 };
 
@@ -646,6 +647,7 @@ static action_items_t long_action_items[] = {
     { .label = " Recorder on/off ", .action = ACTION_RECORDER },
     { .label = " Mute ", .action = ACTION_MUTE },
     { .label = " Voice mode ", .action = ACTION_VOICE_MODE },
+    { .label = " Battery info ", .action = ACTION_BAT_INFO },
     { .label = " APP RTTY ", .action = ACTION_APP_RTTY },
     { .label = " APP FT8 ", .action = ACTION_APP_FT8 },
     { .label = " APP SWR Scan ", .action = ACTION_APP_SWRSCAN },
@@ -770,6 +772,7 @@ static action_items_t hmic_action_items[] = {
     { .label = " Step up ", .action = ACTION_STEP_UP },
     { .label = " Step down ", .action = ACTION_STEP_DOWN },
     { .label = " Voice mode ", .action = ACTION_VOICE_MODE },
+    { .label = " Battery info ", .action = ACTION_BAT_INFO },
     { .label = NULL, .action = ACTION_NONE }
 };
 
@@ -1157,6 +1160,25 @@ static uint8_t make_auto(uint8_t row) {
     return row + 1;
 }
 
+static uint8_t make_freq_accel(uint8_t row) {
+    lv_obj_t    *obj;
+    uint8_t     col = 0;
+
+    row_dsc[row] = 54;
+
+    obj = lv_label_create(grid);
+
+    lv_label_set_text(obj, "Freq acceleration");
+    lv_obj_set_grid_cell(obj, LV_GRID_ALIGN_START, col++, 1, LV_GRID_ALIGN_CENTER, row, 1);
+
+    obj = dropdown_uint8(grid, &params.freq_accel, " None \n Lite \n Strong");
+
+    lv_obj_set_size(obj, SMALL_6, 56);
+    lv_obj_set_grid_cell(obj, LV_GRID_ALIGN_START, 1, 6, LV_GRID_ALIGN_CENTER, row, 1);
+    lv_obj_center(obj);
+    
+    return row + 1;
+}
 
 static uint8_t make_delimiter(uint8_t row) {
     row_dsc[row] = 10;
@@ -1216,6 +1238,9 @@ static void construct_cb(lv_obj_t *parent) {
 
     row = make_delimiter(row);
     row = make_auto(row);
+
+    row = make_delimiter(row);
+    row = make_freq_accel(row);
 
     row = make_delimiter(row);
     

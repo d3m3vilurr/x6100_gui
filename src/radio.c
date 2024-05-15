@@ -327,7 +327,7 @@ void radio_set_freq(uint64_t freq) {
 }
 
 bool radio_check_freq(uint64_t freq, uint64_t *shift) {
-    if (freq >= 1000000 && freq <= 55000000) {
+    if (freq >= 500000 && freq <= 55000000) {
         if (shift != NULL) {
             *shift = 0;
         }
@@ -860,6 +860,12 @@ float radio_change_pwr(int16_t d) {
     radio_unlock();
     
     return params.pwr;
+}
+
+void radio_set_pwr(float d) {
+    radio_lock();
+    x6100_control_txpwr_set(d);
+    radio_unlock();
 }
 
 uint16_t radio_change_key_speed(int16_t d) {
