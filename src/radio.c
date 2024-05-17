@@ -190,6 +190,7 @@ void radio_vfo_set() {
 
     x6100_control_vfo_set(params_band.vfo);
     x6100_control_split_set(params_band.split);
+    x6100_control_rfg_set(params_band.rfg);
     radio_unlock();
 
     params_bands_find(params_band.vfo_x[params_band.vfo].freq, &params.freq_band);
@@ -244,7 +245,7 @@ void radio_init(lv_obj_t *obj) {
     radio_load_atu();
 
     x6100_control_rxvol_set(params.vol);
-    x6100_control_rfg_set(params.rfg);
+    x6100_control_rfg_set(params_band.rfg);
     x6100_control_sql_set(params.sql);
     x6100_control_atu_set(params.atu);
     x6100_control_txpwr_set(params.pwr);
@@ -407,18 +408,18 @@ bool radio_change_spmode(int16_t df) {
 
 uint16_t radio_change_rfg(int16_t df) {
     if (df == 0) {
-        return params.rfg;
+        return params_band.rfg;
     }
     
     params_lock();
-    params.rfg = limit(params.rfg + df, 0, 100);
-    params_unlock(&params.durty.rfg);
+    params_band.rfg = limit(params_band.rfg + df, 0, 100);
+    params_unlock(&params_band.durty.rfg);
 
     radio_lock();
-    x6100_control_rfg_set(params.rfg);
+    x6100_control_rfg_set(params_band.rfg);
     radio_unlock();
 
-    return params.rfg;
+    return params_band.rfg;
 }
 
 uint16_t radio_change_sql(int16_t df) {

@@ -4,7 +4,6 @@ iambic_mode	1
 key_mode	2
 key_speed	16
 moni	10
-rfg	63
 spectrum_auto_min	0
 spectrum_beta	70
 spectrum_factor	1
