@@ -54,8 +54,8 @@
 #define FREQ_OSR        2
 #define TIME_OSR        4
 
-#define FT8_BANDS       11
-#define FT4_BANDS       9
+#define FT8_BANDS       14
+#define FT4_BANDS       11
 
 #define WIDTH           775
 
