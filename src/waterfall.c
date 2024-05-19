@@ -31,7 +31,6 @@ static lv_coord_t       width;
 static lv_coord_t       height;
 static int32_t          width_hz = 100000;
 static uint32_t         line_len;
-static uint8_t          *line_buf = NULL;
 
 static int              grid_min = -70;
 static int              grid_max = -40;
@@ -40,6 +39,7 @@ static lv_img_dsc_t     *frame;
 static lv_color_t       palette[256];
 static int16_t          scroll_hor = 0;
 static int16_t          scroll_hor_surplus = 0;
+static uint8_t          delay = 0;
 
 lv_obj_t * waterfall_init(lv_obj_t * parent) {
     obj = lv_obj_create(parent);
@@ -51,12 +51,7 @@ lv_obj_t * waterfall_init(lv_obj_t * parent) {
 }
 
 static void scroll_down() {
-    uint8_t     *ptr = frame->data + frame->data_size - line_len * 2;
-
-    for (int y = 0; y < height-1; y++) {
-        memcpy(ptr + line_len, ptr, line_len);
-        ptr -= line_len;
-    }
+    memmove(frame->data + line_len, frame->data, frame->data_size - line_len);
 }
 
 static void scroll_right(int16_t px) {
@@ -65,9 +60,8 @@ static void scroll_right(int16_t px) {
     uint16_t    tail = (width - px) * PX_BYTES;
     
     for (int y = 0; y < height; y++) {
-        memset(line_buf + tail, 0, offset);
-        memcpy(line_buf, ptr + offset, tail);
-        memcpy(ptr, line_buf, line_len);
+        memmove(ptr, ptr + offset, tail);
+        memset(ptr + tail, 0, offset);
         
         ptr += line_len;
     }
@@ -79,15 +73,20 @@ static void scroll_left(int16_t px) {
     uint16_t    tail = (width - px) * PX_BYTES;
     
     for (int y = 0; y < height; y++) {
-        memset(line_buf, 0, offset);
-        memcpy(line_buf + offset, ptr, tail);
-        memcpy(ptr, line_buf, line_len);
+        memmove(ptr + offset, ptr, tail);
+        memset(ptr, 0, offset);
         
         ptr += line_len;
     }
 }
 
 void waterfall_data(float *data_buf, uint16_t size) {
+    if (delay)
+    {
+        delay--;
+        return;
+    }
+
     if (scroll_hor) {
         return;
     }
@@ -116,11 +115,16 @@ void waterfall_data(float *data_buf, uint16_t size) {
 }
 
 static void do_scroll_cb(lv_event_t * event) {
+    int16_t px;
     if (scroll_hor == 0) {
         return;
     }
 
-    int16_t px = (abs(scroll_hor) / 10) + 1;
+    if (params.waterfall_smooth_scroll.x) {
+        px = (abs(scroll_hor) / 10) + 1;
+    } else {
+        px = abs(scroll_hor);
+    }
 
     if (scroll_hor > 0) {
         scroll_right(px);
@@ -146,7 +150,6 @@ void waterfall_set_height(lv_coord_t h) {
     frame = lv_img_buf_alloc(width, height, LV_IMG_CF_TRUE_COLOR);
 
     line_len = frame->data_size / frame->header.h;
-    line_buf = malloc(line_len);
     
     styles_waterfall_palette(palette, 256);
 
@@ -203,21 +206,13 @@ void waterfall_change_min(int16_t d) {
 }
 
 void waterfall_change_freq(int16_t df) {
-    uint16_t    div = width_hz / width;
-    int16_t     surplus = df % div;
+    delay = 2;
+    uint16_t    hz_per_pixel = width_hz / width;
 
-    scroll_hor += df / div;
-    
-    if (surplus) {
-        scroll_hor_surplus += surplus;
-    } else {
-        scroll_hor_surplus = 0;
-    }
-    
-    if (abs(scroll_hor_surplus) > div) {
-        scroll_hor += scroll_hor_surplus / div;
-        scroll_hor_surplus = scroll_hor_surplus % div;
-    }
+    df += scroll_hor_surplus;
+    scroll_hor += df / hz_per_pixel;
+
+    scroll_hor_surplus = df % hz_per_pixel;
 
     if (scroll_hor) {
         lv_obj_invalidate(img);
