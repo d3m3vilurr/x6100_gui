@@ -5,6 +5,7 @@
  *
  *  Copyright (c) 2022-2023 Belousov Oleg aka R1CBU
  */
+#define _GNU_SOURCE
 
 #include <unistd.h>
 #include <stdio.h>
@@ -19,7 +20,8 @@
 #include "audio.h"
 #include "meter.h"
 #include "dsp.h"
-#include "params.h"
+#include "params/params.h"
+#include "dialog_recorder.h"
 
 #define AUDIO_RATE_MS   100
 
@@ -33,6 +35,10 @@ static char                 *play_device = "alsa_output.platform-sound.stereo-fa
 static pa_stream            *capture_stm;
 static char                 *capture_device = "alsa_input.platform-sound.stereo-fallback";
 
+static pa_stream            *monitor_stm = NULL;
+
+static void record_monitor_setup();
+
 static void on_state_change(pa_context *c, void *userdata) {
     pa_threaded_mainloop_signal(mloop, 0);
 }
@@ -40,15 +46,37 @@ static void on_state_change(pa_context *c, void *userdata) {
 static void read_callback(pa_stream *s, size_t nbytes, void *udata) {
     int16_t *buf = NULL;
 
-    pa_stream_peek(capture_stm, &buf, &nbytes);
+    pa_stream_peek(s, (const void**) &buf, &nbytes);
     dsp_put_audio_samples(nbytes / 2, buf);
-    pa_stream_drop(capture_stm);
+    pa_stream_drop(s);
+}
+
+static void mixer_setup() {
+    int res;
+    // overall level
+    res = system("amixer sset 'Headphone',0 58,58");
+    // Play level from app to radio (for FT8)
+    res = system("amixer sset 'AIF1 DA0',0 160,160");
+    res = system("amixer sset 'DAC',0 147,147");
+
+    // capture audio from radio
+    res = system("amixer sset 'Mic1',0 0,0 cap");
+    // mic boost
+    res = system("amixer sset 'Mic1 Boost',0 1");
+    // disable capturing from mixer
+    res = system("amixer sset 'Mixer',0 nocap");
+    res = system("amixer sset 'ADC',0 160,160");
+    res = system("amixer sset 'ADC Gain',0 3");
+    res = system("amixer sset 'AIF1 AD0',0 160,160");
+    res = system("amixer sset 'AIF1 AD0 Stereo',0 'Mix Mono'");
+    res = system("amixer sset 'AIF1 Data Digital ADC',0 cap");
 }
 
 void audio_init() {
+    mixer_setup();
     mloop = pa_threaded_mainloop_new();
     pa_threaded_mainloop_start(mloop);
-    
+
     mlapi = pa_threaded_mainloop_get_api(mloop);
     ctx = pa_context_new(mlapi, "X6100 GUI");
 
@@ -56,13 +84,13 @@ void audio_init() {
     pa_context_set_state_callback(ctx, on_state_change, NULL);
     pa_context_connect(ctx, NULL, 0, NULL);
     pa_threaded_mainloop_unlock(mloop);
-    
+
     while (PA_CONTEXT_READY != pa_context_get_state(ctx))  {
         pa_threaded_mainloop_wait(mloop);
     }
-    
+
     LV_LOG_INFO("Conected");
-    
+
     pa_buffer_attr  attr;
 
     pa_sample_spec  spec = {
@@ -83,43 +111,45 @@ void audio_init() {
     pa_threaded_mainloop_lock(mloop);
     pa_stream_connect_playback(play_stm, play_device, &attr, PA_STREAM_ADJUST_LATENCY, NULL, NULL);
     pa_threaded_mainloop_unlock(mloop);
-    
+
     /* Capture */
 
     spec.rate = AUDIO_CAPTURE_RATE,
     attr.fragsize = attr.tlength = pa_usec_to_bytes(AUDIO_RATE_MS * PA_USEC_PER_MSEC, &spec);
 
     capture_stm = pa_stream_new(ctx, "X6100 GUI Capture", &spec, NULL);
-    
+
     pa_threaded_mainloop_lock(mloop);
     pa_stream_set_read_callback(capture_stm, read_callback, NULL);
     pa_stream_connect_record(capture_stm, capture_device, &attr, PA_STREAM_ADJUST_LATENCY);
     pa_threaded_mainloop_unlock(mloop);
+
+    record_monitor_setup();
 }
 
 int audio_play(int16_t *samples_buf, size_t samples) {
     while (true) {
         size_t size;
-    
+
         pa_threaded_mainloop_lock(mloop);
         size = pa_stream_writable_size(play_stm);
         pa_threaded_mainloop_unlock(mloop);
-        
+
         if (size >= (samples * 2)) {
             break;
         }
-        
+
         usleep(1000);
     }
 
     pa_threaded_mainloop_lock(mloop);
     int res = pa_stream_write(play_stm, samples_buf, samples * 2, NULL, 0, PA_SEEK_RELATIVE);
     pa_threaded_mainloop_unlock(mloop);
-    
+
     if (res < 0) {
         LV_LOG_ERROR("pa_stream_write() failed: %s", pa_strerror(pa_context_errno(ctx)));
     }
-    
+
     return res;
 }
 
@@ -135,7 +165,7 @@ void audio_play_wait() {
         pa_threaded_mainloop_lock(mloop);
         r = pa_operation_get_state(op);
         pa_threaded_mainloop_unlock(mloop);
-      
+
         if (r == PA_OPERATION_DONE || r == PA_OPERATION_CANCELLED) {
             break;
         }
@@ -146,24 +176,22 @@ void audio_play_wait() {
     pa_operation_unref(op);
 }
 
-int16_t* audio_gain(int16_t *buf, size_t samples, uint16_t gain) {
-    int16_t *out_samples = malloc(samples * sizeof(int16_t));
+void audio_gain_db(int16_t *buf, size_t samples, float gain, int16_t *out) {
+    float scale = exp10f(gain / 10.0f);
 
     for (uint16_t i = 0; i < samples; i++) {
-        int32_t x = buf[i] * gain / 100;
-        
+        int32_t x = buf[i] * scale;
+
         if (x > 32767) {
             x = 32767;
         }
-        
+
         if (x < -32767) {
             x = -32767;
         }
-    
-        out_samples[i] = x;
+
+        out[i] = x;
     }
-    
-    return out_samples;
 }
 
 void audio_play_en(bool on) {
@@ -176,4 +204,39 @@ void audio_play_en(bool on) {
         x6100_control_hmic_set(params.hmic);
         x6100_control_imic_set(params.imic);
     }
+}
+
+static void monitor_cb(pa_stream *stream, size_t length, void *udata) {
+    int16_t *buf = NULL;
+
+    pa_stream_peek(stream, (const void**) &buf, &length);
+    int16_t max_val = 1;
+    int16_t cur_val;
+    for (size_t i=0; i < length / 2; i++) {
+        cur_val = buf[i];
+        if (cur_val > max_val) {
+            max_val = cur_val;
+        }
+    }
+    float max_db = 20.0f * log10f((float) max_val / (1UL << 15));
+    dialog_recorder_set_peak(max_db);
+    pa_stream_drop(stream);
+}
+
+
+static void record_monitor_setup() {
+
+    pa_sample_spec  spec = {
+        .format = PA_SAMPLE_S16NE,
+        .channels = 1
+    };
+
+    spec.rate = 30;
+
+    monitor_stm = pa_stream_new(ctx, "X6100 GUI Monitor", &spec, NULL);
+
+    pa_threaded_mainloop_lock(mloop);
+    pa_stream_set_read_callback(monitor_stm, monitor_cb, NULL);
+    pa_stream_connect_record(monitor_stm, capture_device, NULL, PA_STREAM_PEAK_DETECT);
+    pa_threaded_mainloop_unlock(mloop);
 }

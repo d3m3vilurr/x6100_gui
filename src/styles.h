@@ -11,6 +11,17 @@
 #include <unistd.h>
 #include "lvgl/lvgl.h"
 
+// COLORS
+
+#define COLOR_LIGHT_GREEN (0x80FF80)
+#define COLOR_LIGHT_YELLOW (0xFFFF30)
+#define COLOR_LIGHT_RED (0xFF8080)
+
+// Symbols
+
+#define SYMBOL_PLUG "\xEF\x87\xA6"  // F1E6
+#define SYMBOL_PLUG_CHARGE "\xEE\x95\x9B"  // E55B
+
 extern lv_color_t   bg_color;
 
 extern lv_style_t   background_style;
@@ -37,6 +48,8 @@ extern lv_style_t   dialog_item_style;
 extern lv_style_t   dialog_item_focus_style;
 extern lv_style_t   dialog_item_edited_style;
 extern lv_style_t   dialog_dropdown_list_style;
+
+extern lv_style_t   cw_tune_style;
 
 extern lv_font_t    sony_14;
 extern lv_font_t    sony_16;

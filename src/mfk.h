@@ -39,12 +39,13 @@ typedef enum {
     MFK_NB_WIDTH,
     MFK_NR,
     MFK_NR_LEVEL,
-    
+
     MFK_AGC_HANG,
     MFK_AGC_KNEE,
     MFK_AGC_SLOPE,
-    
+
     MFK_CW_DECODER,
+    MFK_CW_TUNE,
     MFK_CW_DECODER_SNR,
     MFK_CW_DECODER_PEAK_BETA,
     MFK_CW_DECODER_NOISE_BETA,
@@ -71,5 +72,5 @@ typedef enum {
 extern mfk_state_t  mfk_state;
 
 void mfk_update(int16_t diff, bool voice);
-void mfk_press(int16_t dir);
+void mfk_change_mode(int16_t dir);
 void mfk_set_mode(mfk_mode_t mode);

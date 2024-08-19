@@ -10,6 +10,17 @@
  * X6100 protocol implementation (Mfg 3087)
  */
 
+#include "cat.h"
+
+#include "radio.h"
+#include "params/params.h"
+#include "util.h"
+#include "events.h"
+#include "waterfall.h"
+#include "spectrum.h"
+
+#include <aether_radio/x6100_control/low/gpio.h>
+#include "lvgl/lvgl.h"
 #include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -19,16 +30,6 @@
 #include <pthread.h>
 #include <sys/poll.h>
 
-#include <aether_radio/x6100_control/low/gpio.h>
-#include "lvgl/lvgl.h"
-
-#include "cat.h"
-#include "radio.h"
-#include "params.h"
-#include "util.h"
-#include "events.h"
-#include "waterfall.h"
-#include "spectrum.h"
 
 #define FRAME_PRE       0xFE
 #define FRAME_END       0xFD
@@ -220,8 +221,8 @@ static uint8_t x_mode_2_ci_mode(x6100_mode_t mode) {
 
 
 static uint8_t get_if_bandwidth() {
-    int32_t bw;
-    switch (params_band.vfo_x[params_band.vfo].mode)
+    uint32_t bw = params_current_mode_filter_bw();
+    switch (params_band_cur_mode_get())
     {
     case x6100_mode_cw:
     case x6100_mode_cwr:
@@ -229,7 +230,6 @@ static uint8_t get_if_bandwidth() {
     case x6100_mode_lsb_dig:
     case x6100_mode_usb:
     case x6100_mode_usb_dig:
-        bw = params_mode.filter_high - params_mode.filter_low;
         if (bw <= 500)
         {
             return (bw - 25) / 50;
@@ -239,7 +239,6 @@ static uint8_t get_if_bandwidth() {
         break;
     case x6100_mode_am:
     case x6100_mode_nfm:
-        bw = params_mode.filter_high  * 2;
         return (bw - 100) / 200;
     default:
         return 31;
@@ -253,9 +252,10 @@ static void frame_parse(uint16_t len) {
         return;
     }
     uint64_t new_freq;
-    x6100_vfo_t cur_vfo = params_band.vfo;
+    x6100_vfo_t cur_vfo = params_band_vfo_get();
+    uint64_t cur_freq = params_band_cur_freq_get();
+    x6100_mode_t cur_mode = params_band_cur_mode_get();
     x6100_vfo_t target_vfo = cur_vfo;
-    params_vfo_t* cur_vfo_params = &params_band.vfo_x[cur_vfo];
 
 #if 0
     LV_LOG_WARN("Cmd %02X:%02X (Len %i)", frame[4], frame[5], len);
@@ -267,12 +267,12 @@ static void frame_parse(uint16_t len) {
 
     switch (frame[4]) {
         case C_RD_FREQ:
-            to_bcd(&frame[5], cur_vfo_params->freq, 10);
+            to_bcd(&frame[5], cur_freq, 10);
             send_frame(11);
             break;
 
         case C_RD_MODE: ;
-            uint8_t v = x_mode_2_ci_mode(cur_vfo_params->mode);
+            uint8_t v = x_mode_2_ci_mode(cur_mode);
             frame[5] = v;
             frame[6] = v;
             send_frame(8);
@@ -280,21 +280,21 @@ static void frame_parse(uint16_t len) {
 
         case C_SET_FREQ:
             new_freq = from_bcd(&frame[5], 10);
-            if (new_freq != cur_vfo_params->freq)
+            if (new_freq != cur_freq)
             {
                 set_freq(new_freq);
             }
-            
+
             send_code(CODE_OK);
             break;
 
         case C_SET_MODE: ;
             x6100_mode_t new_mode = ci_mode_2_x_mode(frame[5], NULL);
-            if (new_mode != cur_vfo_params->mode) {
+            if (new_mode != cur_mode) {
                 radio_set_mode(cur_vfo, new_mode);
                 event_send(lv_scr_act(), EVENT_SCREEN_UPDATE, NULL);
             }
-            
+
             send_code(CODE_OK);
             break;
 
@@ -326,7 +326,7 @@ static void frame_parse(uint16_t len) {
                     radio_set_vfo(X6100_VFO_A);
                     event_send(lv_scr_act(), EVENT_SCREEN_UPDATE, NULL);
                 }
-                
+
                 send_code(CODE_OK);
                 break;
 
@@ -349,13 +349,13 @@ static void frame_parse(uint16_t len) {
                 target_vfo = (cur_vfo == X6100_VFO_A) ? X6100_VFO_B : X6100_VFO_A;
             }
             if (frame[6] == FRAME_END) {
-                uint64_t freq = params_band.vfo_x[target_vfo].freq;
+                uint64_t freq = params_band_vfo_freq_get(target_vfo);
                 to_bcd(&frame[6], freq, 10);
                 send_frame(12);
             } else {
                 uint64_t freq = from_bcd(&frame[6], 10);
-                if (params_band.vfo_x[target_vfo].freq != freq){
-                    params_band.vfo_x[target_vfo].freq = freq;
+                if (params_band_vfo_freq_get(target_vfo) != freq){
+                    params_band_vfo_freq_set(target_vfo, freq);
 
                     if (cur_vfo == target_vfo) {
                         set_freq(freq);
@@ -370,7 +370,7 @@ static void frame_parse(uint16_t len) {
                 target_vfo = (cur_vfo == X6100_VFO_A) ? X6100_VFO_B : X6100_VFO_A;
             }
             if (frame[6] == FRAME_END) {
-                uint8_t v = x_mode_2_ci_mode(params_band.vfo_x[target_vfo].mode);
+                uint8_t v = x_mode_2_ci_mode(params_band_vfo_mode_get(target_vfo));
                 frame[6] = v;
                 frame[7] = 0;
                 frame[8] = 1;
@@ -398,13 +398,20 @@ static void frame_parse(uint16_t len) {
                     break;
                 }
             } else {
-                LV_LOG_WARN("Unsuported %02X:%02X (Len %i)", frame[4], frame[5], len);
+                LV_LOG_WARN("Unsupported %02X:%02X (Len %i)", frame[4], frame[5], len);
                 send_code(CODE_NG);
             }
             break;
 
+        case C_RD_TRXID:
+            if (frame[5] == 0) {
+                frame[6] = 0xa4;
+                send_frame(8);
+            }
+            break;
+
         default:
-            LV_LOG_WARN("Unsuported %02X:%02X (Len %i)", frame[4], frame[5], len);
+            LV_LOG_WARN("Unsupported %02X:%02X (Len %i)", frame[4], frame[5], len);
             send_code(CODE_NG);
             break;
     }

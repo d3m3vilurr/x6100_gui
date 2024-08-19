@@ -82,6 +82,9 @@ extern uint32_t custom_tick_get(void);
    HAL SETTINGS
  *====================*/
 
+/*Default display refresh period. LVG will redraw changed areas with this period time*/
+#define LV_DISP_DEF_REFR_PERIOD 30      /*[ms]*/
+
 /*Input device read period in milliseconds*/
 #define LV_INDEV_DEF_READ_PERIOD 10     /*[ms]*/
 
@@ -153,7 +156,7 @@ extern uint32_t custom_tick_get(void);
 
 /*Maximum buffer size to allocate for rotation.
  *Only used if software rotation is enabled in the display driver.*/
-#define LV_DISP_ROT_MAX_BUF (10*1024)
+#define LV_DISP_ROT_MAX_BUF (4*800*50)
 
 /*-------------
  * GPU
@@ -611,5 +614,8 @@ extern uint32_t custom_tick_get(void);
 
 /*1: Enable grid navigation*/
 #define LV_USE_GRIDNAV  1
+
+/*1: Enable a published subscriber based messaging system */
+#define LV_USE_MSG 1
 
 #endif /*LV_CONF_H*/

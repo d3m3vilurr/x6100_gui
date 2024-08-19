@@ -27,10 +27,11 @@ typedef enum {
     VOL_VOICE_RATE,
     VOL_VOICE_PITCH,
     VOL_VOICE_VOLUME,
-    
+    VOL_FILTER_BW,
+
     VOL_LAST
 } vol_mode_t;
 
 void vol_update(int16_t diff, bool voice);
-void vol_press(int16_t dir);
+void vol_change_mode(int16_t dir);
 void vol_set_mode(vol_mode_t mode);

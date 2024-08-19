@@ -19,12 +19,11 @@
 
 #include <aether_radio/x6100_control/control.h>
 
-#include "lvgl/lvgl.h"
 #include "audio.h"
 #include "dialog.h"
 #include "dialog_msg_voice.h"
 #include "styles.h"
-#include "params.h"
+#include "params/params.h"
 #include "events.h"
 #include "util.h"
 #include "pannel.h"
@@ -78,12 +77,11 @@ static dialog_t             dialog = {
 dialog_t                    *dialog_msg_voice = &dialog;
 
 static void load_table() {
-    lv_table_set_row_cnt(table, 1);
     table_rows = 0;
 
     DIR             *dp;
     struct dirent   *ep;
-    
+
     dp = opendir(path);
 
     if (dp != NULL) {
@@ -94,9 +92,14 @@ static void load_table() {
 
             lv_table_set_cell_value(table, table_rows++, 0, ep->d_name);
         }
-          
+
         closedir(dp);
+    }
+    if (table_rows > 0) {
+        lv_table_set_row_cnt(table, table_rows);
     } else {
+        lv_table_set_cell_value(table, table_rows++, 0, "");
+        lv_table_set_row_cnt(table, 1);
     }
 }
 
@@ -108,20 +111,21 @@ static bool create_file() {
     sfinfo.samplerate = AUDIO_CAPTURE_RATE;
     sfinfo.channels = 1;
     sfinfo.format = SF_FORMAT_MPEG | SF_FORMAT_MPEG_LAYER_III;
-    
+
     char        filename[64];
     time_t      now = time(NULL);
     struct tm   *t = localtime(&now);
 
     snprintf(filename, sizeof(filename),
-        "%s/MSG_%04i%02i%02i_%02i%02i%02i.mp3", 
+        "%s/MSG_%04i%02i%02i_%02i%02i%02i.mp3",
         path, t->tm_year + 1900, t->tm_mon + 1, t->tm_mday, t->tm_hour, t->tm_min, t->tm_sec
     );
-    
+
     file = sf_open(filename, SFM_WRITE, &sfinfo);
-    
+
     if (file == NULL) {
-        LV_LOG_ERROR("Problem with create file");
+        const char* err = sf_strerror(NULL);
+        LV_LOG_ERROR("Problem with create file: %s", err);
         return false;
     }
 
@@ -145,7 +149,7 @@ static const char* get_item() {
     if (row == LV_TABLE_CELL_NONE) {
         return NULL;
     }
-    
+
     return lv_table_get_cell_value(table, row, col);
 }
 
@@ -155,9 +159,9 @@ static void play_item() {
     if (!item) {
         return;
     }
-    
+
     char filename[64];
-        
+
     strcpy(filename, path);
     strcat(filename, "/");
     strcat(filename, item);
@@ -173,15 +177,15 @@ static void play_item() {
     }
 
     state = MSG_VOICE_PLAY;
-
     while (state == MSG_VOICE_PLAY) {
         int res = sf_read_short(file, samples_buf, BUF_SIZE);
-            
+
         if (res > 0) {
-            int16_t *samples = audio_gain(samples_buf, res, params.play_gain);
-        
-            audio_play(samples, res);
-            free(samples);
+            if (params.play_gain_db != 0) {
+                audio_gain_db(samples_buf, res, params.play_gain_db, samples_buf);
+            }
+
+            audio_play(samples_buf, res);
         } else {
             state = MSG_VOICE_OFF;
         }
@@ -230,21 +234,21 @@ static void * beacon_thread(void *arg) {
             case VOICE_BEACON_OFF:
                 buttons_unload_page();
                 buttons_load_page(PAGE_MSG_VOICE_1);
-                return;
-        
+                return NULL;
+
             case VOICE_BEACON_PLAY:
                 msg_set_text_fmt("Sending message");
                 radio_set_ptt(true);
                 play_item();
                 radio_set_ptt(false);
                 break;
-            
+
             case VOICE_BEACON_IDLE:
                 msg_set_text_fmt("Beacon pause: %i s", params.voice_msg_period);
                 sleep(params.voice_msg_period);
                 break;
         }
-        
+
         switch (beacon) {
             case VOICE_BEACON_PLAY:
                 beacon = VOICE_BEACON_IDLE;
@@ -255,23 +259,24 @@ static void * beacon_thread(void *arg) {
                 break;
         }
     }
+    return NULL;
 }
 
 static void textarea_window_close_cb() {
     lv_group_add_obj(keyboard_group, table);
     lv_group_set_editing(keyboard_group, true);
-    
+
     free(prev_filename);
     prev_filename = NULL;
 }
 
 static void textarea_window_edit_ok_cb() {
     const char *new_filename = textarea_window_get();
-    
+
     if (strcmp(prev_filename, new_filename) != 0) {
         char prev[64];
         char new[64];
-        
+
         snprintf(prev, sizeof(prev), "%s/%s", path, prev_filename);
         snprintf(new, sizeof(new), "%s/%s", path, new_filename);
 
@@ -302,16 +307,16 @@ static void construct_cb(lv_obj_t *parent) {
     lv_obj_add_event_cb(dialog.obj, tx_cb, EVENT_RADIO_TX, NULL);
 
     table = lv_table_create(dialog.obj);
-    
+
     lv_obj_remove_style(table, NULL, LV_STATE_ANY | LV_PART_MAIN);
 
     lv_obj_set_size(table, 775, 325);
-    
+
     lv_table_set_col_cnt(table, 1);
     lv_table_set_col_width(table, 0, 770);
 
     lv_obj_set_style_border_width(table, 0, LV_PART_ITEMS);
-    
+
     lv_obj_set_style_bg_opa(table, LV_OPA_TRANSP, LV_PART_ITEMS);
     lv_obj_set_style_text_color(table, lv_color_white(), LV_PART_ITEMS);
     lv_obj_set_style_pad_top(table, 5, LV_PART_ITEMS);
@@ -328,19 +333,19 @@ static void construct_cb(lv_obj_t *parent) {
     lv_group_set_editing(keyboard_group, true);
 
     lv_obj_center(table);
-    
+
     mkdir(path, 0755);
     load_table();
 }
 
 static void destruct_cb() {
     audio_play_en(false);
-    
+
     if (beacon == VOICE_BEACON_IDLE) {
         pthread_cancel(thread);
         pthread_join(thread, NULL);
     }
-    
+
     beacon = VOICE_BEACON_OFF;
     state = MSG_VOICE_OFF;
     textarea_window_close();
@@ -419,21 +424,21 @@ void dialog_msg_voice_period_cb(lv_event_t * e) {
         case 10:
             params.voice_msg_period = 30;
             break;
-            
+
         case 30:
             params.voice_msg_period = 60;
             break;
-            
+
         case 60:
             params.voice_msg_period = 120;
             break;
-            
+
         case 120:
             params.voice_msg_period = 10;
             break;
     }
 
-    params_unlock(&params.durty.voice_msg_period);
+    params_unlock(&params.dirty.voice_msg_period);
     msg_set_text_fmt("Beacon period: %i s", params.voice_msg_period);
 }
 
@@ -474,7 +479,7 @@ void play_stop_cb(lv_event_t * e) {
 
 void dialog_msg_voice_rename_cb(lv_event_t * e) {
     prev_filename = strdup(get_item());
-    
+
     if (prev_filename) {
         lv_group_remove_obj(table);
         textarea_window_open(textarea_window_edit_ok_cb, textarea_window_close_cb);
@@ -487,11 +492,11 @@ void dialog_msg_voice_delete_cb(lv_event_t * e) {
 
     if (item) {
         char filename[64];
-        
+
         strcpy(filename, path);
         strcat(filename, "/");
         strcat(filename, item);
-        
+
         unlink(filename);
         load_table();
     }
@@ -502,12 +507,18 @@ msg_voice_state_t dialog_msg_voice_get_state() {
 }
 
 void dialog_msg_voice_put_audio_samples(size_t nsamples, int16_t *samples) {
-    int16_t *out_samples = audio_gain(samples, nsamples, params.rec_gain * 6);
+    int16_t *out_samples;
+    if (params.rec_gain_db != 0) {
+        out_samples = malloc(nsamples * sizeof(*out_samples));
+        audio_gain_db(samples, nsamples, params.rec_gain_db, out_samples);
+    } else {
+        out_samples = samples;
+    }
     int16_t peak = 0;
-    
+
     for (uint16_t i = 0; i < nsamples; i++) {
         int16_t x = abs(out_samples[i]);
-        
+
         if (x > peak) {
             peak = x;
         }
@@ -516,5 +527,7 @@ void dialog_msg_voice_put_audio_samples(size_t nsamples, int16_t *samples) {
     peak = S1 + (peak / 32768.0) * (S9_40 - S1);
     meter_update(peak, 0.25f);
     sf_write_short(file, out_samples, nsamples);
-    free(out_samples);
+    if (params.rec_gain_db != 0) {
+        free(out_samples);
+    }
 }

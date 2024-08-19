@@ -13,12 +13,13 @@
 #include <unistd.h>
 #include <sys/ioctl.h>
 #include <linux/rtc.h>
+#include <errno.h>
 
 #include "lvgl/lvgl.h"
 #include "dialog.h"
 #include "dialog_settings.h"
 #include "styles.h"
-#include "params.h"
+#include "params/params.h"
 #include "backlight.h"
 #include "radio.h"
 #include "events.h"
@@ -101,7 +102,7 @@ static lv_obj_t * switch_bool(lv_obj_t *parent, params_bool_t *var) {
     if (var->x) {
         lv_obj_add_state(obj, LV_STATE_CHECKED);
     }
-    
+
     return obj;
 }
 
@@ -113,7 +114,7 @@ static lv_obj_t * spinbox_uint8(lv_obj_t *parent, params_uint8_t *var) {
     lv_spinbox_set_value(obj, var->x);
     lv_spinbox_set_range(obj, var->min, var->max);
     lv_obj_add_event_cb(obj, uint8_spinbox_update_cb, LV_EVENT_VALUE_CHANGED, var);
-    
+
     return obj;
 }
 
@@ -126,12 +127,12 @@ static lv_obj_t * dropdown_uint8(lv_obj_t *parent, params_uint8_t *var, const ch
 
     lv_obj_t *list = lv_dropdown_get_list(obj);
     lv_obj_add_style(list, &dialog_dropdown_list_style, 0);
-    
+
     lv_dropdown_set_options(obj, options);
     lv_dropdown_set_symbol(obj, NULL);
 
     lv_dropdown_set_selected(obj, var->x);
-    
+
     return obj;
 }
 
@@ -146,24 +147,42 @@ static void datetime_update_cb(lv_event_t * e) {
     ts.tm_sec = lv_spinbox_get_value(sec);
 
     /* Set system */
-    
+
     struct timespec tp;
-    
+
     tp.tv_sec = mktime(&ts);
     tp.tv_nsec = 0;
 
-    clock_settime(CLOCK_REALTIME, &tp);
-    
-    /* Set RTC */
-    
-    int rtc = open("/dev/rtc1", O_WRONLY);
-    
-    if (rtc > 0) {
-        ioctl(rtc, RTC_SET_TIME, &ts);
-        close(rtc);
-    } else {
-        LV_LOG_ERROR("Set RTC");
+    int res = clock_settime(CLOCK_REALTIME, &tp);
+    if (res != 0)
+    {
+        LV_LOG_ERROR("Can't set system time: %s\n", strerror(errno));
+        return;
     }
+
+}
+
+static void datetime_set_rtc_cb(lv_event_t * e) {
+    lv_obj_t * obj = lv_event_get_target(e);
+    if (!lv_group_get_editing(lv_obj_get_group(obj)))
+    {
+        /* Set RTC */
+
+        int rtc = open("/dev/rtc1", O_WRONLY);
+
+        if (rtc > 0) {
+            int res = ioctl(rtc, RTC_SET_TIME, &ts);
+            if (res != 0)
+            {
+                LV_LOG_ERROR("Can't set RTC time: %s\n", strerror(errno));
+                return;
+            }
+            close(rtc);
+        } else {
+            LV_LOG_ERROR("Can't open /dev/rtc1: %s\n", strerror(errno));
+        }
+    }
+
 }
 
 static uint8_t make_date(uint8_t row) {
@@ -191,9 +210,10 @@ static uint8_t make_date(uint8_t row) {
     lv_spinbox_set_digit_format(obj, 2, 0);
     lv_spinbox_set_digit_step_direction(obj, LV_DIR_LEFT);
     lv_obj_set_size(obj, SMALL_2, 56);
-    
+
     lv_obj_set_grid_cell(obj, LV_GRID_ALIGN_START, col, 2, LV_GRID_ALIGN_CENTER, row, 1);   col += 2;
     lv_obj_add_event_cb(obj, datetime_update_cb, LV_EVENT_VALUE_CHANGED, NULL);
+    lv_obj_add_event_cb(obj, datetime_set_rtc_cb, LV_EVENT_FOCUSED, NULL);
 
     /* Month */
 
@@ -207,9 +227,10 @@ static uint8_t make_date(uint8_t row) {
     lv_spinbox_set_digit_format(obj, 2, 0);
     lv_spinbox_set_digit_step_direction(obj, LV_DIR_LEFT);
     lv_obj_set_size(obj, SMALL_2, 56);
-    
+
     lv_obj_set_grid_cell(obj, LV_GRID_ALIGN_START, col, 2, LV_GRID_ALIGN_CENTER, row, 1);   col += 2;
     lv_obj_add_event_cb(obj, datetime_update_cb, LV_EVENT_VALUE_CHANGED, NULL);
+    lv_obj_add_event_cb(obj, datetime_set_rtc_cb, LV_EVENT_FOCUSED, NULL);
 
     /* Year */
 
@@ -223,9 +244,10 @@ static uint8_t make_date(uint8_t row) {
     lv_spinbox_set_digit_format(obj, 4, 0);
     lv_spinbox_set_digit_step_direction(obj, LV_DIR_LEFT);
     lv_obj_set_size(obj, SMALL_2, 56);
-    
+
     lv_obj_set_grid_cell(obj, LV_GRID_ALIGN_START, col, 2, LV_GRID_ALIGN_CENTER, row, 1);   col += 2;
     lv_obj_add_event_cb(obj, datetime_update_cb, LV_EVENT_VALUE_CHANGED, NULL);
+    lv_obj_add_event_cb(obj, datetime_set_rtc_cb, LV_EVENT_FOCUSED, NULL);
 
     return row + 1;
 }
@@ -255,9 +277,10 @@ static uint8_t make_time(uint8_t row) {
     lv_spinbox_set_digit_format(obj, 2, 0);
     lv_spinbox_set_digit_step_direction(obj, LV_DIR_LEFT);
     lv_obj_set_size(obj, SMALL_2, 56);
-    
+
     lv_obj_set_grid_cell(obj, LV_GRID_ALIGN_START, col, 2, LV_GRID_ALIGN_CENTER, row, 1);   col += 2;
     lv_obj_add_event_cb(obj, datetime_update_cb, LV_EVENT_VALUE_CHANGED, NULL);
+    lv_obj_add_event_cb(obj, datetime_set_rtc_cb, LV_EVENT_FOCUSED, NULL);
 
     /* Min */
 
@@ -271,9 +294,10 @@ static uint8_t make_time(uint8_t row) {
     lv_spinbox_set_digit_format(obj, 2, 0);
     lv_spinbox_set_digit_step_direction(obj, LV_DIR_LEFT);
     lv_obj_set_size(obj, SMALL_2, 56);
-    
+
     lv_obj_set_grid_cell(obj, LV_GRID_ALIGN_START, col, 2, LV_GRID_ALIGN_CENTER, row, 1);   col += 2;
     lv_obj_add_event_cb(obj, datetime_update_cb, LV_EVENT_VALUE_CHANGED, NULL);
+    lv_obj_add_event_cb(obj, datetime_set_rtc_cb, LV_EVENT_FOCUSED, NULL);
 
     /* Sec */
 
@@ -287,9 +311,10 @@ static uint8_t make_time(uint8_t row) {
     lv_spinbox_set_digit_format(obj, 2, 0);
     lv_spinbox_set_digit_step_direction(obj, LV_DIR_LEFT);
     lv_obj_set_size(obj, SMALL_2, 56);
-    
+
     lv_obj_set_grid_cell(obj, LV_GRID_ALIGN_START, col, 2, LV_GRID_ALIGN_CENTER, row, 1);   col += 2;
     lv_obj_add_event_cb(obj, datetime_update_cb, LV_EVENT_VALUE_CHANGED, NULL);
+    lv_obj_add_event_cb(obj, datetime_set_rtc_cb, LV_EVENT_FOCUSED, NULL);
 
     return row + 1;
 }
@@ -301,7 +326,7 @@ static void backlight_timeout_update_cb(lv_event_t * e) {
 
     params_lock();
     params.brightness_timeout = lv_spinbox_get_value(obj);
-    params_unlock(&params.durty.brightness_timeout);
+    params_unlock(&params.dirty.brightness_timeout);
 
     backlight_tick();
 }
@@ -311,11 +336,11 @@ static void backlight_brightness_update_cb(lv_event_t * e) {
 
     params_lock();
     params.brightness_normal = lv_slider_get_value(obj);
-    params_unlock(&params.durty.brightness_normal);
+    params_unlock(&params.dirty.brightness_normal);
 
     params_lock();
     params.brightness_idle = lv_slider_get_left_value(obj);
-    params_unlock(&params.durty.brightness_idle);
+    params_unlock(&params.dirty.brightness_idle);
 
     backlight_set_brightness(params.brightness_normal);
 }
@@ -338,7 +363,7 @@ static uint8_t make_backlight(uint8_t row) {
 
     lv_label_set_text(obj, "Timeout, Brightness");
     lv_obj_set_grid_cell(obj, LV_GRID_ALIGN_START, col++, 1, LV_GRID_ALIGN_CENTER, row, 1);
-    
+
     /* Timeout */
 
     obj = lv_spinbox_create(grid);
@@ -350,14 +375,14 @@ static uint8_t make_backlight(uint8_t row) {
     lv_spinbox_set_digit_format(obj, 3, 0);
     lv_spinbox_set_digit_step_direction(obj, LV_DIR_LEFT);
     lv_obj_set_size(obj, SMALL_2, 56);
-    
+
     lv_obj_set_grid_cell(obj, LV_GRID_ALIGN_START, col, 2, LV_GRID_ALIGN_CENTER, row, 1);   col += 2;
     lv_obj_add_event_cb(obj, backlight_timeout_update_cb, LV_EVENT_VALUE_CHANGED, NULL);
 
     /* Brightness */
 
     obj = lv_obj_create(grid);
-    
+
     lv_obj_set_size(obj, SMALL_4, 56);
     lv_obj_set_grid_cell(obj, LV_GRID_ALIGN_START, col, 4, LV_GRID_ALIGN_CENTER, row, 1);   col += 4;
     lv_obj_set_style_bg_opa(obj, LV_OPA_TRANSP, LV_PART_MAIN);
@@ -367,7 +392,7 @@ static uint8_t make_backlight(uint8_t row) {
     obj = lv_slider_create(obj);
 
     dialog_item(&dialog, obj);
-    
+
     lv_slider_set_mode(obj, LV_SLIDER_MODE_RANGE);
     lv_slider_set_value(obj, params.brightness_normal, LV_ANIM_OFF);
     lv_slider_set_left_value(obj, params.brightness_idle, LV_ANIM_OFF);
@@ -388,19 +413,19 @@ static uint8_t make_backlight(uint8_t row) {
     obj = lv_dropdown_create(grid);
 
     dialog_item(&dialog, obj);
-    
+
     lv_obj_set_size(obj, SMALL_6, 56);
     lv_obj_set_grid_cell(obj, LV_GRID_ALIGN_START, 1, 6, LV_GRID_ALIGN_CENTER, row, 1);
     lv_obj_center(obj);
-    
+
     lv_obj_t *list = lv_dropdown_get_list(obj);
     lv_obj_add_style(list, &dialog_dropdown_list_style, 0);
-    
+
     lv_dropdown_set_options(obj, " Always Off \n Always On \n Temporarily On ");
     lv_dropdown_set_symbol(obj, NULL);
     lv_dropdown_set_selected(obj, params.brightness_buttons);
     lv_obj_add_event_cb(obj, backlight_buttons_update_cb, LV_EVENT_VALUE_CHANGED, NULL);
-    
+
     return row + 1;
 }
 
@@ -429,7 +454,7 @@ static uint8_t make_line_gain(uint8_t row) {
     lv_obj_set_grid_cell(obj, LV_GRID_ALIGN_START, 0, 1, LV_GRID_ALIGN_CENTER, row, 1);
 
     obj = lv_obj_create(grid);
-    
+
     lv_obj_set_size(obj, SMALL_3, 56);
     lv_obj_set_grid_cell(obj, LV_GRID_ALIGN_START, 1, 3, LV_GRID_ALIGN_CENTER, row, 1);
     lv_obj_set_style_bg_opa(obj, LV_OPA_TRANSP, LV_PART_MAIN);
@@ -449,7 +474,7 @@ static uint8_t make_line_gain(uint8_t row) {
     lv_obj_add_event_cb(obj, line_in_update_cb, LV_EVENT_VALUE_CHANGED, NULL);
 
     obj = lv_obj_create(grid);
-    
+
     lv_obj_set_size(obj, SMALL_3, 56);
     lv_obj_set_grid_cell(obj, LV_GRID_ALIGN_START, 4, 3, LV_GRID_ALIGN_CENTER, row, 1);
     lv_obj_set_style_bg_opa(obj, LV_OPA_TRANSP, LV_PART_MAIN);
@@ -467,7 +492,7 @@ static uint8_t make_line_gain(uint8_t row) {
     lv_obj_center(obj);
 
     lv_obj_add_event_cb(obj, line_out_update_cb, LV_EVENT_VALUE_CHANGED, NULL);
-    
+
     return row + 1;
 }
 
@@ -487,7 +512,7 @@ static uint8_t make_mag(uint8_t row) {
     /* Freq */
 
     obj = lv_obj_create(grid);
-    
+
     lv_obj_set_size(obj, SMALL_2, 56);
     lv_obj_set_grid_cell(obj, LV_GRID_ALIGN_START, col, 3, LV_GRID_ALIGN_CENTER, row, 1);   col += 2;
     lv_obj_set_style_bg_opa(obj, LV_OPA_TRANSP, LV_PART_MAIN);
@@ -501,7 +526,7 @@ static uint8_t make_mag(uint8_t row) {
     /* Info */
 
     obj = lv_obj_create(grid);
-    
+
     lv_obj_set_size(obj, SMALL_2, 56);
     lv_obj_set_grid_cell(obj, LV_GRID_ALIGN_START, col, 3, LV_GRID_ALIGN_CENTER, row, 1);   col += 2;
     lv_obj_set_style_bg_opa(obj, LV_OPA_TRANSP, LV_PART_MAIN);
@@ -515,7 +540,7 @@ static uint8_t make_mag(uint8_t row) {
     /* ALC */
 
     obj = lv_obj_create(grid);
-    
+
     lv_obj_set_size(obj, SMALL_2, 56);
     lv_obj_set_grid_cell(obj, LV_GRID_ALIGN_START, col, 3, LV_GRID_ALIGN_CENTER, row, 1);   col += 2;
     lv_obj_set_style_bg_opa(obj, LV_OPA_TRANSP, LV_PART_MAIN);
@@ -569,14 +594,14 @@ static uint8_t make_clock(uint8_t row) {
     obj = lv_dropdown_create(grid);
 
     dialog_item(&dialog, obj);
-    
+
     lv_obj_set_size(obj, SMALL_6, 56);
     lv_obj_set_grid_cell(obj, LV_GRID_ALIGN_START, 1, 6, LV_GRID_ALIGN_CENTER, row, 1);
     lv_obj_center(obj);
-    
+
     lv_obj_t *list = lv_dropdown_get_list(obj);
     lv_obj_add_style(list, &dialog_dropdown_list_style, 0);
-    
+
     lv_dropdown_set_options(obj, " Always Time \n Time and Power \n Always Power");
     lv_dropdown_set_symbol(obj, NULL);
     lv_dropdown_set_selected(obj, params.clock_view);
@@ -588,7 +613,7 @@ static uint8_t make_clock(uint8_t row) {
     row_dsc[row] = 54;
 
     obj = lv_label_create(grid);
-    
+
     lv_label_set_text(obj, "Timeout Clock, Power, TX");
     lv_obj_set_grid_cell(obj, LV_GRID_ALIGN_START, 0, 1, LV_GRID_ALIGN_CENTER, row, 1);
 
@@ -601,7 +626,7 @@ static uint8_t make_clock(uint8_t row) {
     lv_spinbox_set_digit_format(obj, 2, 0);
     lv_spinbox_set_digit_step_direction(obj, LV_DIR_LEFT);
     lv_obj_set_size(obj, SMALL_2, 56);
-    
+
     lv_obj_set_grid_cell(obj, LV_GRID_ALIGN_START, col, 2, LV_GRID_ALIGN_CENTER, row, 1);   col += 2;
     lv_obj_add_event_cb(obj, clock_time_timeout_update_cb, LV_EVENT_VALUE_CHANGED, NULL);
 
@@ -614,7 +639,7 @@ static uint8_t make_clock(uint8_t row) {
     lv_spinbox_set_digit_format(obj, 2, 0);
     lv_spinbox_set_digit_step_direction(obj, LV_DIR_LEFT);
     lv_obj_set_size(obj, SMALL_2, 56);
-    
+
     lv_obj_set_grid_cell(obj, LV_GRID_ALIGN_START, col, 2, LV_GRID_ALIGN_CENTER, row, 1);   col += 2;
     lv_obj_add_event_cb(obj, clock_power_timeout_update_cb, LV_EVENT_VALUE_CHANGED, NULL);
 
@@ -627,7 +652,7 @@ static uint8_t make_clock(uint8_t row) {
     lv_spinbox_set_digit_format(obj, 2, 0);
     lv_spinbox_set_digit_step_direction(obj, LV_DIR_LEFT);
     lv_obj_set_size(obj, SMALL_2, 56);
-    
+
     lv_obj_set_grid_cell(obj, LV_GRID_ALIGN_START, col, 2, LV_GRID_ALIGN_CENTER, row, 1);   col += 2;
     lv_obj_add_event_cb(obj, clock_tx_timeout_update_cb, LV_EVENT_VALUE_CHANGED, NULL);
 
@@ -668,32 +693,32 @@ static void long_action_update_cb(lv_event_t * e) {
     switch (*i) {
         case 0:
             params.long_gen = val;
-            params_unlock(&params.durty.long_gen);
+            params_unlock(&params.dirty.long_gen);
             break;
-        
+
         case 1:
             params.long_app = val;
-            params_unlock(&params.durty.long_app);
+            params_unlock(&params.dirty.long_app);
             break;
 
         case 2:
             params.long_key = val;
-            params_unlock(&params.durty.long_key);
+            params_unlock(&params.dirty.long_key);
             break;
 
         case 3:
             params.long_msg = val;
-            params_unlock(&params.durty.long_msg);
+            params_unlock(&params.dirty.long_msg);
             break;
 
         case 4:
             params.long_dfn = val;
-            params_unlock(&params.durty.long_dfn);
+            params_unlock(&params.dirty.long_dfn);
             break;
 
         case 5:
             params.long_dfl = val;
-            params_unlock(&params.durty.long_dfl);
+            params_unlock(&params.dirty.long_dfl);
             break;
     }
 }
@@ -706,25 +731,25 @@ static uint8_t make_long_action(uint8_t row) {
         row_dsc[row] = 54;
 
         obj = lv_label_create(grid);
-        
+
         lv_label_set_text(obj, labels[i]);
         lv_obj_set_grid_cell(obj, LV_GRID_ALIGN_START, 0, 1, LV_GRID_ALIGN_CENTER, row, 1);
 
         obj = lv_dropdown_create(grid);
 
         dialog_item(&dialog, obj);
-    
+
         lv_obj_set_size(obj, SMALL_6, 56);
         lv_obj_set_grid_cell(obj, LV_GRID_ALIGN_START, 1, 6, LV_GRID_ALIGN_CENTER, row, 1);
         lv_obj_center(obj);
-    
+
         lv_obj_t *list = lv_dropdown_get_list(obj);
         lv_obj_add_style(list, &dialog_dropdown_list_style, 0);
-    
+
         lv_dropdown_set_symbol(obj, NULL);
-        
+
         uint8_t x;
-        
+
         switch (i) {
             case 0: x = params.long_gen;    break;
             case 1: x = params.long_app;    break;
@@ -732,34 +757,34 @@ static uint8_t make_long_action(uint8_t row) {
             case 3: x = params.long_msg;    break;
             case 4: x = params.long_dfn;    break;
             case 5: x = params.long_dfl;    break;
-                
+
             default:
                 x = ACTION_NONE;
                 break;
         }
-        
+
         lv_dropdown_clear_options(obj);
-        
+
         uint8_t n = 0;
-        
+
         while (long_action_items[n].label) {
             lv_dropdown_add_option(obj, long_action_items[n].label, LV_DROPDOWN_POS_LAST);
-            
+
             if (long_action_items[n].action == x) {
                 lv_dropdown_set_selected(obj, n);
             }
 
             n++;
         }
-        
+
         uint32_t *param = malloc(sizeof(uint32_t));
         *param = i;
-        
+
         lv_obj_add_event_cb(obj, long_action_update_cb, LV_EVENT_VALUE_CHANGED, param);
-        
+
         row++;
     }
-    
+
     return row;
 }
 
@@ -773,12 +798,14 @@ static action_items_t hmic_action_items[] = {
     { .label = " Step down ", .action = ACTION_STEP_DOWN },
     { .label = " Voice mode ", .action = ACTION_VOICE_MODE },
     { .label = " Battery info ", .action = ACTION_BAT_INFO },
+    { .label = " NR toggle ", .action = ACTION_NR_TOGGLE },
+    { .label = " NB toggle ", .action = ACTION_NB_TOGGLE },
     { .label = NULL, .action = ACTION_NONE }
 };
 
 static void hmic_action_update_cb(lv_event_t * e) {
     lv_obj_t    *obj = lv_event_get_target(e);
-    uint32_t    *i = lv_event_get_user_data(e);
+    uint8_t     *i = lv_event_get_user_data(e);
     uint8_t     val = hmic_action_items[lv_dropdown_get_selected(obj)].action;
 
     params_lock();
@@ -786,86 +813,79 @@ static void hmic_action_update_cb(lv_event_t * e) {
     switch (*i) {
         case 0:
             params.press_f1 = val;
-            params_unlock(&params.durty.press_f1);
+            params_unlock(&params.dirty.press_f1);
             break;
-        
+
         case 1:
             params.press_f2 = val;
-            params_unlock(&params.durty.press_f2);
+            params_unlock(&params.dirty.press_f2);
             break;
 
         case 2:
             params.long_f1 = val;
-            params_unlock(&params.durty.long_f1);
+            params_unlock(&params.dirty.long_f1);
             break;
 
         case 3:
             params.long_f2 = val;
-            params_unlock(&params.durty.long_f2);
+            params_unlock(&params.dirty.long_f2);
             break;
     }
 }
 
 static uint8_t make_hmic_action(uint8_t row) {
-    char        *labels[] = { "HMic F1 press", "HMic F2 press", "HMic F1 long press", "HMic F2 long press" };
+    struct {char *label; uint8_t param;} items[] = {
+        {"HMic F1 press", params.press_f1},
+        {"HMic F2 press", params.press_f2},
+        {"HMic F1 long press", params.long_f1},
+        {"HMic F2 long press", params.long_f2}
+    };
+    size_t items_len = sizeof(items) / sizeof(items[0]);
     lv_obj_t    *obj;
 
-    for (uint8_t i = 0; i < 4; i++) {
+    for (uint8_t i = 0; i < items_len; i++) {
         row_dsc[row] = 54;
 
         obj = lv_label_create(grid);
-        
-        lv_label_set_text(obj, labels[i]);
+
+        lv_label_set_text(obj, items[i].label);
         lv_obj_set_grid_cell(obj, LV_GRID_ALIGN_START, 0, 1, LV_GRID_ALIGN_CENTER, row, 1);
 
         obj = lv_dropdown_create(grid);
 
         dialog_item(&dialog, obj);
-    
+
         lv_obj_set_size(obj, SMALL_6, 56);
         lv_obj_set_grid_cell(obj, LV_GRID_ALIGN_START, 1, 6, LV_GRID_ALIGN_CENTER, row, 1);
         lv_obj_center(obj);
-    
+
         lv_obj_t *list = lv_dropdown_get_list(obj);
         lv_obj_add_style(list, &dialog_dropdown_list_style, 0);
-    
+
         lv_dropdown_set_symbol(obj, NULL);
-        
-        uint8_t x;
-        
-        switch (i) {
-            case 0: x = params.press_f1;    break;
-            case 1: x = params.press_f2;    break;
-            case 2: x = params.long_f1;     break;
-            case 3: x = params.long_f2;     break;
-                
-            default:
-                x = ACTION_NONE;
-                break;
-        }
-        
+
         lv_dropdown_clear_options(obj);
-        
+
         uint8_t n = 0;
-        
+
         while (hmic_action_items[n].label) {
             lv_dropdown_add_option(obj, hmic_action_items[n].label, LV_DROPDOWN_POS_LAST);
-            
-            if (hmic_action_items[n].action == x) {
+
+            if (hmic_action_items[n].action == items[i].param) {
                 lv_dropdown_set_selected(obj, n);
             }
 
             n++;
         }
-        
-        uint32_t *param = malloc(sizeof(uint32_t));
+
+        uint8_t *param = malloc(sizeof(uint8_t));
         *param = i;
-        
+
         lv_obj_add_event_cb(obj, hmic_action_update_cb, LV_EVENT_VALUE_CHANGED, param);
-        
+
         row++;
     }
-    
+
     return row;
 }
 
@@ -875,16 +895,16 @@ static void play_gain_update_cb(lv_event_t * e) {
     lv_obj_t *obj = lv_event_get_target(e);
 
     params_lock();
-    params.play_gain = lv_slider_get_value(obj);
-    params_unlock(&params.durty.play_gain);
+    params.play_gain_db = lv_slider_get_value(obj);
+    params_unlock(&params.dirty.play_gain_db);
 }
 
 static void rec_gain_update_cb(lv_event_t * e) {
     lv_obj_t *obj = lv_event_get_target(e);
 
     params_lock();
-    params.rec_gain = lv_slider_get_value(obj);
-    params_unlock(&params.durty.rec_gain);
+    params.rec_gain_db = lv_slider_get_value(obj);
+    params_unlock(&params.dirty.rec_gain_db);
 }
 
 static uint8_t make_audio_gain(uint8_t row) {
@@ -898,7 +918,7 @@ static uint8_t make_audio_gain(uint8_t row) {
     lv_obj_set_grid_cell(obj, LV_GRID_ALIGN_START, 0, 1, LV_GRID_ALIGN_CENTER, row, 1);
 
     obj = lv_obj_create(grid);
-    
+
     lv_obj_set_size(obj, SMALL_3, 56);
     lv_obj_set_grid_cell(obj, LV_GRID_ALIGN_START, 1, 3, LV_GRID_ALIGN_CENTER, row, 1);
     lv_obj_set_style_bg_opa(obj, LV_OPA_TRANSP, LV_PART_MAIN);
@@ -910,15 +930,15 @@ static uint8_t make_audio_gain(uint8_t row) {
     dialog_item(&dialog, obj);
 
     lv_slider_set_mode(obj, LV_SLIDER_MODE_NORMAL);
-    lv_slider_set_value(obj, params.play_gain, LV_ANIM_OFF);
-    lv_slider_set_range(obj, 25, 200);
+    lv_slider_set_value(obj, params.play_gain_db, LV_ANIM_OFF);
+    lv_slider_set_range(obj, -10, 10);
     lv_obj_set_width(obj, SMALL_3 - 30);
     lv_obj_center(obj);
 
     lv_obj_add_event_cb(obj, play_gain_update_cb, LV_EVENT_VALUE_CHANGED, NULL);
 
     obj = lv_obj_create(grid);
-    
+
     lv_obj_set_size(obj, SMALL_3, 56);
     lv_obj_set_grid_cell(obj, LV_GRID_ALIGN_START, 4, 3, LV_GRID_ALIGN_CENTER, row, 1);
     lv_obj_set_style_bg_opa(obj, LV_OPA_TRANSP, LV_PART_MAIN);
@@ -930,13 +950,13 @@ static uint8_t make_audio_gain(uint8_t row) {
     dialog_item(&dialog, obj);
 
     lv_slider_set_mode(obj, LV_SLIDER_MODE_NORMAL);
-    lv_slider_set_value(obj, params.rec_gain, LV_ANIM_OFF);
-    lv_slider_set_range(obj, 25, 200);
+    lv_slider_set_value(obj, params.rec_gain_db, LV_ANIM_OFF);
+    lv_slider_set_range(obj, -10, 10);
     lv_obj_set_width(obj, SMALL_3 - 30);
     lv_obj_center(obj);
 
     lv_obj_add_event_cb(obj, rec_gain_update_cb, LV_EVENT_VALUE_CHANGED, NULL);
-    
+
     return row + 1;
 }
 
@@ -945,10 +965,10 @@ static uint8_t make_audio_gain(uint8_t row) {
 static void transverter_from_update_cb(lv_event_t * e) {
     lv_obj_t        *obj = lv_event_get_target(e);
     transverter_t   *transverter = lv_event_get_user_data(e);
-    
+
     params_lock();
     transverter->from = lv_spinbox_get_value(obj) * 1000000L;
-    params_unlock(&transverter->durty.from);
+    params_unlock(&transverter->dirty.from);
 }
 
 static void transverter_to_update_cb(lv_event_t * e) {
@@ -957,7 +977,7 @@ static void transverter_to_update_cb(lv_event_t * e) {
 
     params_lock();
     transverter->to = lv_spinbox_get_value(obj) * 1000000L;
-    params_unlock(&transverter->durty.to);
+    params_unlock(&transverter->dirty.to);
 }
 
 static void transverter_shift_update_cb(lv_event_t * e) {
@@ -966,14 +986,14 @@ static void transverter_shift_update_cb(lv_event_t * e) {
 
     params_lock();
     transverter->shift = lv_spinbox_get_value(obj) * 1000000L;
-    params_unlock(&transverter->durty.shift);
+    params_unlock(&transverter->dirty.shift);
 }
 
 static uint8_t make_transverter(uint8_t row, uint8_t n) {
     lv_obj_t        *obj;
     uint8_t         col = 0;
     transverter_t   *transverter = &params_transverter[n];
-    
+
     /* Label */
 
     row_dsc[row] = 54;
@@ -994,7 +1014,7 @@ static uint8_t make_transverter(uint8_t row, uint8_t n) {
     lv_spinbox_set_digit_format(obj, 3, 0);
     lv_spinbox_set_digit_step_direction(obj, LV_DIR_LEFT);
     lv_obj_set_size(obj, SMALL_2, 56);
-    
+
     lv_obj_set_grid_cell(obj, LV_GRID_ALIGN_START, col, 2, LV_GRID_ALIGN_CENTER, row, 1);   col += 2;
     lv_obj_add_event_cb(obj, transverter_from_update_cb, LV_EVENT_VALUE_CHANGED, transverter);
 
@@ -1009,7 +1029,7 @@ static uint8_t make_transverter(uint8_t row, uint8_t n) {
     lv_spinbox_set_digit_format(obj, 3, 0);
     lv_spinbox_set_digit_step_direction(obj, LV_DIR_LEFT);
     lv_obj_set_size(obj, SMALL_2, 56);
-    
+
     lv_obj_set_grid_cell(obj, LV_GRID_ALIGN_START, col, 2, LV_GRID_ALIGN_CENTER, row, 1);   col += 2;
     lv_obj_add_event_cb(obj, transverter_to_update_cb, LV_EVENT_VALUE_CHANGED, transverter);
 
@@ -1024,7 +1044,7 @@ static uint8_t make_transverter(uint8_t row, uint8_t n) {
     lv_spinbox_set_digit_format(obj,3, 0);
     lv_spinbox_set_digit_step_direction(obj, LV_DIR_LEFT);
     lv_obj_set_size(obj, SMALL_2, 56);
-    
+
     lv_obj_set_grid_cell(obj, LV_GRID_ALIGN_START, col, 2, LV_GRID_ALIGN_CENTER, row, 1);   col += 2;
     lv_obj_add_event_cb(obj, transverter_shift_update_cb, LV_EVENT_VALUE_CHANGED, transverter);
 
@@ -1049,14 +1069,14 @@ static uint8_t make_voice(uint8_t row) {
     lv_obj_set_size(obj, SMALL_6, 56);
     lv_obj_set_grid_cell(obj, LV_GRID_ALIGN_START, 1, 6, LV_GRID_ALIGN_CENTER, row, 1);
     lv_obj_center(obj);
-    
+
     /* * */
 
     row++;
     row_dsc[row] = 54;
 
     obj = lv_label_create(grid);
-    
+
     lv_label_set_text(obj, "Voice rate, pitch, volume");
     lv_obj_set_grid_cell(obj, LV_GRID_ALIGN_START, 0, 1, LV_GRID_ALIGN_CENTER, row, 1);
 
@@ -1072,7 +1092,7 @@ static uint8_t make_voice(uint8_t row) {
     lv_spinbox_set_digit_format(obj, 3, 0);
     lv_spinbox_set_digit_step_direction(obj, LV_DIR_LEFT);
     lv_obj_set_size(obj, SMALL_2, 56);
-    
+
     lv_obj_set_grid_cell(obj, LV_GRID_ALIGN_START, col, 2, LV_GRID_ALIGN_CENTER, row, 1);   col += 2;
 
     obj = spinbox_uint8(grid, &params.voice_volume);
@@ -1100,7 +1120,7 @@ static uint8_t make_auto(uint8_t row) {
     lv_obj_set_grid_cell(obj, LV_GRID_ALIGN_START, 0, 1, LV_GRID_ALIGN_CENTER, row, 1);
 
     obj = lv_obj_create(grid);
-    
+
     lv_obj_set_size(obj, SMALL_3, 56);
     lv_obj_set_grid_cell(obj, LV_GRID_ALIGN_START, 1, 3, LV_GRID_ALIGN_CENTER, row, 1);
     lv_obj_set_style_bg_opa(obj, LV_OPA_TRANSP, LV_PART_MAIN);
@@ -1112,7 +1132,7 @@ static uint8_t make_auto(uint8_t row) {
     lv_obj_set_width(obj, SMALL_3 - 30);
 
     obj = lv_obj_create(grid);
-    
+
     lv_obj_set_size(obj, SMALL_3, 56);
     lv_obj_set_grid_cell(obj, LV_GRID_ALIGN_START, 4, 3, LV_GRID_ALIGN_CENTER, row, 1);
     lv_obj_set_style_bg_opa(obj, LV_OPA_TRANSP, LV_PART_MAIN);
@@ -1134,7 +1154,7 @@ static uint8_t make_auto(uint8_t row) {
     lv_obj_set_grid_cell(obj, LV_GRID_ALIGN_START, 0, 1, LV_GRID_ALIGN_CENTER, row, 1);
 
     obj = lv_obj_create(grid);
-    
+
     lv_obj_set_size(obj, SMALL_3, 56);
     lv_obj_set_grid_cell(obj, LV_GRID_ALIGN_START, 1, 3, LV_GRID_ALIGN_CENTER, row, 1);
     lv_obj_set_style_bg_opa(obj, LV_OPA_TRANSP, LV_PART_MAIN);
@@ -1146,7 +1166,7 @@ static uint8_t make_auto(uint8_t row) {
     lv_obj_set_width(obj, SMALL_3 - 30);
 
     obj = lv_obj_create(grid);
-    
+
     lv_obj_set_size(obj, SMALL_3, 56);
     lv_obj_set_grid_cell(obj, LV_GRID_ALIGN_START, 4, 3, LV_GRID_ALIGN_CENTER, row, 1);
     lv_obj_set_style_bg_opa(obj, LV_OPA_TRANSP, LV_PART_MAIN);
@@ -1172,7 +1192,7 @@ static uint8_t make_waterfall_smooth_scroll(uint8_t row) {
     lv_obj_set_grid_cell(obj, LV_GRID_ALIGN_START, col++, 1, LV_GRID_ALIGN_CENTER, row, 1);
 
     obj = lv_obj_create(grid);
-    
+
     lv_obj_set_size(obj, SMALL_6, 56);
     lv_obj_set_grid_cell(obj, LV_GRID_ALIGN_START, 1, 3, LV_GRID_ALIGN_CENTER, row, 1);
     lv_obj_set_style_bg_opa(obj, LV_OPA_TRANSP, LV_PART_MAIN);
@@ -1180,6 +1200,32 @@ static uint8_t make_waterfall_smooth_scroll(uint8_t row) {
     lv_obj_center(obj);
 
     obj = switch_bool(obj, &params.waterfall_smooth_scroll);
+
+    lv_obj_set_width(obj, SMALL_6 - 30);
+
+    return row + 1;
+}
+
+static uint8_t make_waterfall_center_line(uint8_t row) {
+    lv_obj_t    *obj;
+    uint8_t     col = 0;
+
+    row_dsc[row] = 54;
+
+    obj = lv_label_create(grid);
+
+    lv_label_set_text(obj, "Waterfall center line");
+    lv_obj_set_grid_cell(obj, LV_GRID_ALIGN_START, col++, 1, LV_GRID_ALIGN_CENTER, row, 1);
+
+    obj = lv_obj_create(grid);
+
+    lv_obj_set_size(obj, SMALL_6, 56);
+    lv_obj_set_grid_cell(obj, LV_GRID_ALIGN_START, 1, 3, LV_GRID_ALIGN_CENTER, row, 1);
+    lv_obj_set_style_bg_opa(obj, LV_OPA_TRANSP, LV_PART_MAIN);
+    lv_obj_clear_flag(obj, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_center(obj);
+
+    obj = switch_bool(obj, &params.waterfall_center_line);
 
     lv_obj_set_width(obj, SMALL_6 - 30);
 
@@ -1202,21 +1248,21 @@ static uint8_t make_freq_accel(uint8_t row) {
     lv_obj_set_size(obj, SMALL_6, 56);
     lv_obj_set_grid_cell(obj, LV_GRID_ALIGN_START, 1, 6, LV_GRID_ALIGN_CENTER, row, 1);
     lv_obj_center(obj);
-    
+
     return row + 1;
 }
 
 static uint8_t make_delimiter(uint8_t row) {
     row_dsc[row] = 10;
-    
+
     return row + 1;
 }
 
 static void construct_cb(lv_obj_t *parent) {
     dialog.obj = dialog_init(parent);
-    
+
     grid = lv_obj_create(dialog.obj);
-    
+
     lv_obj_set_layout(grid, LV_LAYOUT_GRID);
 
     lv_obj_set_size(grid, 780, 330);
@@ -1225,7 +1271,7 @@ static void construct_cb(lv_obj_t *parent) {
     lv_obj_set_style_border_width(grid, 0, LV_PART_MAIN);
     lv_obj_set_style_pad_column(grid, SMALL_PAD, 0);
     lv_obj_set_style_pad_row(grid, 5, 0);
-    
+
     lv_obj_center(grid);
 
     uint8_t row = 1;
@@ -1234,7 +1280,7 @@ static void construct_cb(lv_obj_t *parent) {
     struct tm *t = localtime(&now);
 
     memcpy(&ts, t, sizeof(ts));
-    
+
     row = make_date(row);
     row = make_time(row);
 
@@ -1268,14 +1314,17 @@ static void construct_cb(lv_obj_t *parent) {
     row = make_waterfall_smooth_scroll(row);
     row = make_delimiter(row);
 
+    row = make_waterfall_center_line(row);
+    row = make_delimiter(row);
+
     row = make_delimiter(row);
     row = make_freq_accel(row);
 
     row = make_delimiter(row);
-    
+
     for (uint8_t i = 0; i < TRANSVERTER_NUM; i++)
         row = make_transverter(row, i);
-    
+
     row_dsc[row] = LV_GRID_TEMPLATE_LAST;
     lv_obj_set_grid_dsc_array(grid, col_dsc, row_dsc);
 }
@@ -1291,7 +1340,7 @@ static void key_cb(lv_event_t * e) {
         case LV_KEY_ESC:
             dialog_destruct(&dialog);
             break;
-            
+
         case KEY_VOL_LEFT_EDIT:
         case KEY_VOL_LEFT_SELECT:
             radio_change_vol(-1);

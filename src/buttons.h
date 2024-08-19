@@ -26,16 +26,17 @@ typedef enum {
 
     PAGE_KEY_1,
     PAGE_KEY_2,
-    
+
     PAGE_CW_DECODER_1,
+    PAGE_CW_DECODER_2,
 
     PAGE_DFN_1,
     PAGE_DFN_2,
     PAGE_DFN_3,
-    
+
     PAGE_APP_1,
     PAGE_APP_2,
-    
+
     PAGE_RTTY,
     PAGE_SETTINGS,
     PAGE_SWRSCAN,
@@ -47,6 +48,16 @@ typedef enum {
     PAGE_MSG_VOICE_2,
     PAGE_RECORDER,
 } button_page_t;
+
+typedef enum {
+    GROUP_GEN,
+    GROUP_APP,
+    GROUP_KEY,
+    GROUP_MSG_CW,
+    GROUP_MSG_VOICE,
+    GROUP_DFN
+
+} button_group_t;
 
 typedef void (*hold_cb_t)(void *);
 
@@ -65,3 +76,4 @@ void buttons_load(uint8_t n, button_item_t *item);
 void buttons_load_page(button_page_t page);
 void buttons_unload_page();
 void buttons_press(uint8_t n, bool hold);
+void buttons_load_page_group(button_group_t group);

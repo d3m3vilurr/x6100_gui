@@ -16,17 +16,8 @@
 #define RADIO_SAMPLES   (512)
 
 typedef enum {
-    /* Loop by keys */
-
-    RADIO_MODE_AM = 0,
-    RADIO_MODE_CW,
-    RADIO_MODE_SSB,
-
-    /* Direct set */
-
-    RADIO_MODE_USB,
-    RADIO_MODE_LSB
-} radio_mode_t;
+    RADIO_MSG_MODE_CHANGED,
+} radio_messages_t;
 
 typedef enum {
     RADIO_RX = 0,
@@ -35,7 +26,7 @@ typedef enum {
     RADIO_ATU_WAIT,
     RADIO_ATU_RUN,
     RADIO_SWRSCAN,
-    
+
     RADIO_POWEROFF,
     RADIO_OFF
 } radio_state_t;
@@ -46,7 +37,9 @@ typedef enum {
     RADIO_CHARGER_SHADOW
 } radio_charger_t;
 
-void radio_init(lv_obj_t *obj);
+typedef void (*radio_state_change_t) ();
+
+void radio_init(radio_state_change_t tx_cb, radio_state_change_t rx_cb, radio_state_change_t atu_update_cb);
 void radio_bb_reset();
 bool radio_tick();
 radio_state_t radio_get_state();
@@ -56,18 +49,18 @@ bool radio_check_freq(uint64_t freq, uint64_t *shift);
 uint64_t radio_change_freq(int32_t df, uint64_t *prev_freq);
 
 void radio_set_mode(x6100_vfo_t vfo,  x6100_mode_t mode);
-void radio_change_mode(radio_mode_t select);
-void radio_restore_mode(x6100_mode_t mode);
+void radio_set_cur_mode(x6100_mode_t mode);
 x6100_mode_t radio_current_mode();
 
 x6100_vfo_t radio_set_vfo(x6100_vfo_t vfo);
-x6100_vfo_t radio_change_vfo();
+x6100_vfo_t radio_toggle_vfo();
 
 uint16_t radio_change_vol(int16_t df);
 uint16_t radio_change_rfg(int16_t df);
 uint16_t radio_change_sql(int16_t df);
 uint32_t radio_change_filter_low(int32_t freq);
 uint32_t radio_change_filter_high(int32_t freq);
+uint32_t radio_change_filter_bw(int32_t bw);
 uint16_t radio_change_moni(int16_t df);
 bool radio_change_spmode(int16_t df);
 
@@ -77,7 +70,7 @@ bool radio_change_pre();
 bool radio_change_att();
 void radio_change_agc();
 void radio_change_atu();
-void radio_change_split();
+void radio_toggle_split();
 float radio_change_pwr(int16_t d);
 void radio_set_pwr(float d);
 
@@ -115,11 +108,13 @@ bool radio_start_swrscan();
 void radio_stop_swrscan();
 
 void radio_vfo_set();
-void radio_mode_set();
+void radio_filters_setup();
 
 void radio_filter_get(int32_t *from_freq, int32_t *to_freq);
 void radio_poweroff();
 void radio_set_ptt(bool tx);
+void radio_set_modem(bool tx);
+
 
 int16_t radio_change_xit(int16_t d);
 int16_t radio_change_rit(int16_t d);

@@ -8,7 +8,7 @@
 
 #include "lvgl/lvgl.h"
 #include "mfk.h"
-#include "params.h"
+#include "params/params.h"
 #include "spectrum.h"
 #include "waterfall.h"
 #include "msg.h"
@@ -20,6 +20,7 @@
 #include "info.h"
 #include "backlight.h"
 #include "voice.h"
+#include "cw_tune_ui.h"
 
 mfk_state_t  mfk_state = MFK_STATE_EDIT;
 mfk_mode_t   mfk_mode = MFK_MIN_LEVEL;
@@ -34,68 +35,65 @@ void mfk_update(int16_t diff, bool voice) {
 
     switch (mfk_mode) {
         case MFK_MIN_LEVEL:
+            i = params_band_grid_min_get();
             if (diff != 0) {
-                waterfall_change_min(diff);
-                spectrum_set_min(params_band.grid_min);
+                i = params_band_grid_min_set(i + diff);
+                spectrum_set_min(i);
+                waterfall_set_min(i);
             }
-            msg_set_text_fmt("#%3X Min level: %i dB", color, params_band.grid_min);
-            
+            msg_set_text_fmt("#%3X Min level: %i dB", color, i);
+
             if (diff) {
-                voice_say_int("Spectrum min level", params_band.grid_min);
+                voice_say_int("Spectrum min level", i);
             } else if (voice) {
                 voice_say_text_fmt("Spectrum min level");
             }
             break;
-            
+
         case MFK_MAX_LEVEL:
+            i = params_band_grid_max_get();
             if (diff != 0) {
-                waterfall_change_max(diff);
-                spectrum_set_max(params_band.grid_max);
+                i = params_band_grid_max_set(i + diff);
+                spectrum_set_max(i);
+                waterfall_set_max(i);
             }
-            msg_set_text_fmt("#%3X Max level: %i dB", color, params_band.grid_max);
+            msg_set_text_fmt("#%3X Max level: %i dB", color, i);
 
             if (diff) {
-                voice_say_int("Spectrum max level", params_band.grid_max);
+                voice_say_int("Spectrum max level", i);
             } else if (voice) {
                 voice_say_text_fmt("Spectrum max level");
             }
             break;
 
         case MFK_SPECTRUM_FACTOR:
+            i = params_current_mode_spectrum_factor_get();
             if (diff != 0) {
-                params_lock();
-                params_mode.spectrum_factor += diff;
-                
-                if (params_mode.spectrum_factor < 1) {
-                    params_mode.spectrum_factor = 1;
-                } else if (params_mode.spectrum_factor > 4) {
-                    params_mode.spectrum_factor = 4;
-                }
-                params_unlock(&params_mode.durty.spectrum_factor);
-            
-                spectrum_mode_set();
+                i = params_current_mode_spectrum_factor_set(i + diff);
+                spectrum_zoom_factor_set(i);
             }
-            msg_set_text_fmt("#%3X Spectrum zoom: x%i", color, params_mode.spectrum_factor);
+            msg_set_text_fmt("#%3X Spectrum zoom: x%i", color, i);
 
             if (diff) {
-                voice_say_int("Spectrum zoom", params_mode.spectrum_factor);
+                voice_say_int("Spectrum zoom", i);
             } else if (voice) {
                 voice_say_text_fmt("Spectrum zoom");
             }
             break;
 
+
         case MFK_SPECTRUM_BETA:
             if (diff != 0) {
                 params_lock();
                 params.spectrum_beta += (diff < 0) ? -5 : 5;
-                
+
                 if (params.spectrum_beta < 0) {
                     params.spectrum_beta = 0;
                 } else if (params.spectrum_beta > 90) {
                     params.spectrum_beta = 90;
                 }
-                params_unlock(&params.durty.spectrum_beta);
-            
+                params_unlock(&params.dirty.spectrum_beta);
+
                 dsp_set_spectrum_beta(params.spectrum_beta / 100.0f);
             }
             msg_set_text_fmt("#%3X Spectrum beta: %i", color, params.spectrum_beta);
@@ -111,7 +109,7 @@ void mfk_update(int16_t diff, bool voice) {
             if (diff != 0) {
                 params_lock();
                 params.spectrum_filled = !params.spectrum_filled;
-                params_unlock(&params.durty.spectrum_filled);
+                params_unlock(&params.dirty.spectrum_filled);
             }
             msg_set_text_fmt("#%3X Spectrum fill: %s", color, params.spectrum_filled ? "On" : "Off");
 
@@ -121,12 +119,12 @@ void mfk_update(int16_t diff, bool voice) {
                 voice_say_text_fmt("Spectrum fill switcher");
             }
             break;
-            
+
         case MFK_SPECTRUM_PEAK:
             if (diff != 0) {
                 params_lock();
                 params.spectrum_peak = !params.spectrum_peak;
-                params_unlock(&params.durty.spectrum_peak);
+                params_unlock(&params.dirty.spectrum_peak);
             }
             msg_set_text_fmt("#%3X Spectrum peak: %s", color, params.spectrum_peak ? "On" : "Off");
 
@@ -140,16 +138,16 @@ void mfk_update(int16_t diff, bool voice) {
         case MFK_PEAK_HOLD:
             if (diff != 0) {
                 i = params.spectrum_peak_hold + diff * 1000;
-                
+
                 if (i < 1000) {
                     i = 1000;
                 } else if (i > 10000) {
                     i = 10000;
                 }
-                
+
                 params_lock();
                 params.spectrum_peak_hold = i;
-                params_unlock(&params.durty.spectrum_peak_hold);
+                params_unlock(&params.dirty.spectrum_peak_hold);
             }
             msg_set_text_fmt("#%3X Peak hold: %i s", color, params.spectrum_peak_hold / 1000);
 
@@ -159,20 +157,20 @@ void mfk_update(int16_t diff, bool voice) {
                 voice_say_text_fmt("Peak hold time");
             }
             break;
-            
+
         case MFK_PEAK_SPEED:
             if (diff != 0) {
                 f = params.spectrum_peak_speed + diff * 0.1f;
-                
+
                 if (f < 0.1f) {
                     f = 0.1f;
                 } else if (f > 3.0f) {
                     f = 3.0f;
                 }
-                
+
                 params_lock();
                 params.spectrum_peak_speed = f;
-                params_unlock(&params.durty.spectrum_peak_speed);
+                params_unlock(&params.dirty.spectrum_peak_speed);
             }
             msg_set_text_fmt("#%3X Peak speed: %.1f dB", color, params.spectrum_peak_speed);
 
@@ -182,7 +180,7 @@ void mfk_update(int16_t diff, bool voice) {
                 voice_say_text_fmt("Peak speed time");
             }
             break;
-            
+
         case MFK_KEY_SPEED:
             i = radio_change_key_speed(diff);
             msg_set_text_fmt("#%3X Key speed: %i wpm", color, i);
@@ -196,7 +194,7 @@ void mfk_update(int16_t diff, bool voice) {
 
         case MFK_KEY_MODE:
             i = radio_change_key_mode(diff);
-            
+
             switch (i) {
                 case x6100_key_manual:
                     str = "Manual";
@@ -218,10 +216,10 @@ void mfk_update(int16_t diff, bool voice) {
                 voice_say_text_fmt("CW key mode selector");
             }
             break;
-            
+
         case MFK_IAMBIC_MODE:
             i = radio_change_iambic_mode(diff);
-            
+
             switch (i) {
                 case x6100_iambic_a:
                     str = "A";
@@ -239,7 +237,7 @@ void mfk_update(int16_t diff, bool voice) {
                 voice_say_text_fmt("Iambic mode selector");
             }
             break;
-            
+
         case MFK_KEY_TONE:
             i = radio_change_key_tone(diff);
             msg_set_text_fmt("#%3X Key tone: %i Hz", color, i);
@@ -297,16 +295,16 @@ void mfk_update(int16_t diff, bool voice) {
 
         case MFK_CHARGER:
             i = radio_change_charger(diff);
-            
+
             switch (i) {
                 case RADIO_CHARGER_OFF:
                     str = "Off";
                     break;
-                    
+
                 case RADIO_CHARGER_ON:
                     str = "On";
                     break;
-                    
+
                 case RADIO_CHARGER_SHADOW:
                     str = "Shadow";
                     break;
@@ -319,13 +317,13 @@ void mfk_update(int16_t diff, bool voice) {
                 voice_say_text_fmt("Charger mode selector");
             }
             break;
-            
+
         case MFK_ANT:
             if (diff != 0) {
                 params_lock();
                 params.ant = limit(params.ant + diff, 1, 5);
-                params_unlock(&params.durty.ant);
-                
+                params_unlock(&params.dirty.ant);
+
                 radio_load_atu();
                 info_atu_update();
             }
@@ -359,7 +357,7 @@ void mfk_update(int16_t diff, bool voice) {
                 voice_say_text_fmt("XIT");
             }
             break;
-            
+
         case MFK_DNF:
             b = radio_change_dnf(diff);
             msg_set_text_fmt("#%3X DNF: %s", color, b ? "On" : "Off");
@@ -381,7 +379,7 @@ void mfk_update(int16_t diff, bool voice) {
                 voice_say_text_fmt("DNF center frequency");
             }
             break;
-            
+
         case MFK_DNF_WIDTH:
             i = radio_change_dnf_width(diff);
             msg_set_text_fmt("#%3X DNF width: %i Hz", color, i);
@@ -491,7 +489,18 @@ void mfk_update(int16_t diff, bool voice) {
                 voice_say_text_fmt("CW decoder switcher");
             }
             break;
-            
+
+        case MFK_CW_TUNE:
+            b = cw_tune_toggle(diff);
+            msg_set_text_fmt("#%3X CW tune: %s", color, b ? "On" : "Off");
+
+            if (diff) {
+                voice_say_bool("CW tune", b);
+            } else if (voice) {
+                voice_say_text_fmt("CW tune switcher");
+            }
+            break;
+
         case MFK_CW_DECODER_SNR:
             f = cw_change_snr(diff);
             msg_set_text_fmt("#%3X CW decoder SNR: %.1f dB", color, f);
@@ -502,7 +511,7 @@ void mfk_update(int16_t diff, bool voice) {
                 voice_say_text_fmt("CW decoder SNR level");
             }
             break;
-            
+
         case MFK_CW_DECODER_PEAK_BETA:
             f = cw_change_peak_beta(diff);
             msg_set_text_fmt("#%3X CW decoder peak beta: %.2f", color, f);
@@ -513,7 +522,7 @@ void mfk_update(int16_t diff, bool voice) {
                 voice_say_text_fmt("CW decoder peak beta");
             }
             break;
-            
+
         case MFK_CW_DECODER_NOISE_BETA:
             f = cw_change_noise_beta(diff);
             msg_set_text_fmt("#%3X CW decoder noise beta: %.2f", color, f);
@@ -546,7 +555,7 @@ void mfk_update(int16_t diff, bool voice) {
                 voice_say_text_fmt("Teletype frequency shift");
             }
             break;
-        
+
         case MFK_RTTY_CENTER:
             i = rtty_change_center(diff);
             msg_set_text_fmt("#%3X RTTY center: %i Hz", color, i);
@@ -557,7 +566,7 @@ void mfk_update(int16_t diff, bool voice) {
                 voice_say_text_fmt("Teletype frequency center");
             }
             break;
-        
+
         case MFK_RTTY_REVERSE:
             b = rtty_change_reverse(diff);
             msg_set_text_fmt("#%3X RTTY reverse: %s", color, b ? "On" : "Off");
@@ -574,32 +583,12 @@ void mfk_update(int16_t diff, bool voice) {
     }
 }
 
-void mfk_press(int16_t dir) {
-    while (true) {
-        if (dir > 0) {
-            if (mfk_mode == MFK_LAST-1) {
-                mfk_mode = 0;
-            } else {
-                mfk_mode++;
-            }
-        } else {
-            if (mfk_mode == 0) {
-                mfk_mode = MFK_LAST-1;
-            } else {
-                mfk_mode--;
-            }
-        }
-        
-        uint64_t mask = (uint64_t) 1L << mfk_mode;
-        
-        if (params.mfk_modes & mask) {
-            break;
-        }
-    }
-    
+void mfk_change_mode(int16_t dir) {
+    mfk_mode = loop_modes(dir, mfk_mode, params.mfk_modes, MFK_LAST-1);
     mfk_update(0, true);
 }
 
 void mfk_set_mode(mfk_mode_t mode) {
     mfk_mode = mode;
+    mfk_state = MFK_STATE_EDIT;
 }

@@ -12,69 +12,15 @@
 #include <stdbool.h>
 
 #include <aether_radio/x6100_control/control.h>
-#include "ft8/constants.h"
-#include "bands.h"
-#include "radio.h"
-#include "clock.h"
-#include "voice.h"
-
-typedef struct {
-    int32_t         filter_low;
-    int32_t         filter_high;
-
-    uint16_t        freq_step;
-    int16_t         spectrum_factor;
-
-    /* durty flags */
-    
-    struct {
-        bool    filter_low;
-        bool    filter_high;
-
-        bool    freq_step;
-        bool    spectrum_factor;
-    } durty;
-} params_mode_t;
-
-typedef struct {
-    uint64_t        freq;
-    bool            shift;
-    x6100_att_t     att;
-    x6100_pre_t     pre;
-    x6100_mode_t    mode;
-    x6100_agc_t     agc;
-    
-    struct {
-        bool    freq;
-        bool    att;
-        bool    pre;
-        bool    mode;
-        bool    agc;
-    } durty;
-} params_vfo_t;
-
-typedef struct {
-    x6100_vfo_t     vfo;
-
-    params_vfo_t    vfo_x[2];
-
-    bool            split;
-    int16_t         grid_min;
-    int16_t         grid_max;
-    int16_t         rfg;
-    char            label[64];
-
-    /* durty flags */
-
-    struct {
-        bool    vfo;
-        bool    split;
-        bool    grid_min;
-        bool    grid_max;
-        bool    rfg;
-        bool    label;
-    } durty;
-} params_band_t;
+#include "../ft8/constants.h"
+#include "../bands.h"
+#include "../radio.h"
+#include "../clock.h"
+#include "../voice.h"
+#include "modulation.h"
+#include "common.h"
+#include "band.h"
+#include "types.h"
 
 typedef enum {
     BUTTONS_DARK = 0,
@@ -91,6 +37,8 @@ typedef enum {
     ACTION_STEP_DOWN,
     ACTION_VOICE_MODE,
     ACTION_BAT_INFO,
+    ACTION_NR_TOGGLE,
+    ACTION_NB_TOGGLE,
 
     ACTION_APP_RTTY = 100,
     ACTION_APP_FT8,
@@ -108,86 +56,26 @@ typedef enum {
     FREQ_ACCEL_STRONG,
 } freq_accel_t;
 
-/* Params items */
-
-typedef struct {
-    char        *name;
-    char        *voice;
-    bool        x;
-    bool        durty;
-} params_bool_t;
-
-typedef struct {
-    char        *name;
-    char        *voice;
-    float       x;
-    bool        durty;
-} params_float_t;
-
-typedef struct {
-    char        *name;
-    char        *voice;
-    uint8_t     x;
-    uint8_t     min;
-    uint8_t     max;
-    bool        durty;
-} params_uint8_t;
-
-typedef struct {
-    char        *name;
-    char        *voice;
-    int8_t      x;
-    bool        durty;
-} params_int8_t;
-
-typedef struct {
-    char        *name;
-    char        *voice;
-    uint16_t    x;
-    bool        durty;
-} params_uint16_t;
-
-typedef struct {
-    char        *name;
-    char        *voice;
-    int16_t     x;
-    bool        durty;
-} params_int16_t;
-
-typedef struct {
-    char        *name;
-    char        *voice;
-    uint64_t    x;
-    bool        durty;
-} params_uint64_t;
-
-typedef struct {
-    char        *name;
-    char        *voice;
-    char        x[16];
-    uint8_t     max_len;
-    bool        durty;
-} params_str_t;
 
 /* Params */
 
 typedef struct {
     uint64_t            vol_modes;
     uint64_t            mfk_modes;
-    
+
     /* LCD */
-    
+
     int16_t             brightness_normal;
     int16_t             brightness_idle;
     uint16_t            brightness_timeout; /* seconds */
     buttons_light_t     brightness_buttons;
 
     /* band info */
-    
+
     band_t              freq_band;
 
     /* radio */
-    
+
     int16_t             band;
     int16_t             vol;
     uint8_t             sql;
@@ -208,35 +96,35 @@ typedef struct {
     int16_t             moni;
     params_bool_t       spmode;
     params_uint8_t      freq_accel;
-    
+
     /* DSP */
-    
+
     bool                dnf;
     uint16_t            dnf_center;
     uint16_t            dnf_width;
-    
+
     bool                nb;
     uint8_t             nb_level;
     uint8_t             nb_width;
-    
+
     bool                nr;
     uint8_t             nr_level;
-    
+
     /* AGC */
-    
+
     bool                agc_hang;
     int8_t              agc_knee;
     uint8_t             agc_slope;
-    
+
     /* VOX */
-    
+
     bool                vox;
     uint8_t             vox_ag;
     uint16_t            vox_delay;
     uint8_t             vox_gain;
-    
+
     /* main screen */
-    
+
     int16_t             spectrum_beta;
     bool                spectrum_peak;
     uint16_t            spectrum_peak_hold;
@@ -247,6 +135,7 @@ typedef struct {
     params_bool_t       waterfall_auto_min;
     params_bool_t       waterfall_auto_max;
     params_bool_t       waterfall_smooth_scroll;
+    params_bool_t       waterfall_center_line;
     params_bool_t       mag_freq;
     params_bool_t       mag_info;
     params_bool_t       mag_alc;
@@ -254,9 +143,9 @@ typedef struct {
     uint8_t             clock_time_timeout;     /* seconds */
     uint8_t             clock_power_timeout;    /* seconds */
     uint8_t             clock_tx_timeout;       /* seconds */
-    
+
     /* key */
-    
+
     uint8_t             key_speed;
     x6100_key_mode_t    key_mode;
     x6100_iambic_mode_t iambic_mode;
@@ -269,18 +158,19 @@ typedef struct {
     /* CW decoder */
 
     bool                cw_decoder;
+    bool                cw_tune;
     float               cw_decoder_snr;
     float               cw_decoder_snr_gist;
     float               cw_decoder_peak_beta;
     float               cw_decoder_noise_beta;
 
     /* Msg */
-    
+
     uint16_t            cw_encoder_period;  /* seconds */
     uint16_t            voice_msg_period;   /* seconds */
 
     /* RTTY */
-    
+
     uint16_t            rtty_center;
     uint16_t            rtty_shift;
     uint32_t            rtty_rate;
@@ -294,7 +184,7 @@ typedef struct {
     uint32_t            swrscan_span;
 
     /* FT8 */
-    
+
     bool                ft8_show_all;
     ftx_protocol_t      ft8_protocol;
     uint8_t             ft8_band;
@@ -302,26 +192,26 @@ typedef struct {
     params_bool_t       ft8_auto;
 
     /* Long press actions */
-    
+
     uint8_t             long_gen;
     uint8_t             long_app;
     uint8_t             long_key;
     uint8_t             long_msg;
     uint8_t             long_dfn;
     uint8_t             long_dfl;
-    
+
     /* HMic F1, F2 actions */
-    
+
     uint8_t             press_f1;
     uint8_t             press_f2;
     uint8_t             long_f1;
     uint8_t             long_f2;
-    
+
     /* Audio play/rec */
 
-    uint16_t            play_gain;
-    uint16_t            rec_gain;
-    
+    int8_t              play_gain_db;
+    int8_t              rec_gain_db;
+
     /* Voice */
 
     params_uint8_t      voice_mode;
@@ -329,12 +219,12 @@ typedef struct {
     params_uint8_t      voice_rate;
     params_uint8_t      voice_pitch;
     params_uint8_t      voice_volume;
-    
+
     params_str_t        qth;
     params_str_t        callsign;
-    
+
     /* durty flags */
-    
+
     struct {
         bool    vol_modes;
         bool    mfk_modes;
@@ -343,7 +233,7 @@ typedef struct {
         bool    brightness_idle;
         bool    brightness_timeout;
         bool    brightness_buttons;
-        
+
         bool    band;
         bool    vol;
         bool    sql;
@@ -359,7 +249,7 @@ typedef struct {
         bool    line_in;
         bool    line_out;
         bool    moni;
-        
+
         bool    dnf;
         bool    dnf_center;
         bool    dnf_width;
@@ -377,7 +267,7 @@ typedef struct {
         bool    vox_ag;
         bool    vox_delay;
         bool    vox_gain;
-        
+
         bool    spectrum_beta;
         bool    spectrum_peak;
         bool    spectrum_peak_hold;
@@ -387,7 +277,7 @@ typedef struct {
         bool    clock_time_timeout;
         bool    clock_power_timeout;
         bool    clock_tx_timeout;
-        
+
         bool    key_speed;
         bool    key_mode;
         bool    iambic_mode;
@@ -398,10 +288,11 @@ typedef struct {
         bool    key_ratio;
 
         bool    cw_decoder;
+        bool    cw_tune;
         bool    cw_decoder_snr;
         bool    cw_decoder_peak_beta;
         bool    cw_decoder_noise_beta;
-        
+
         bool    cw_encoder_period;
         bool    voice_msg_period;
 
@@ -429,33 +320,29 @@ typedef struct {
         bool    long_f1;
         bool    long_f2;
 
-        bool    play_gain;
-        bool    rec_gain;
-    } durty;
+        bool    play_gain_db;
+        bool    rec_gain_db;
+    } dirty;
 } params_t;
 
 typedef struct {
     uint64_t        from;
     uint64_t        to;
     uint64_t        shift;
-    
+
     struct {
         bool        from;
         bool        to;
         bool        shift;
-    } durty;
+    } dirty;
 } transverter_t;
 
 #define TRANSVERTER_NUM 2
 
 extern params_t params;
-extern params_band_t params_band;
-extern params_mode_t params_mode;
 extern transverter_t params_transverter[TRANSVERTER_NUM];
 
 void params_init();
-void params_lock();
-void params_unlock(bool *durty);
 
 void params_bool_set(params_bool_t *var, bool x);
 void params_uint8_set(params_uint8_t *var, uint8_t x);
@@ -464,21 +351,10 @@ void params_str_set(params_str_t *var, const char *x);
 
 uint8_t params_uint8_change(params_uint8_t *var, int16_t df);
 
-void params_band_save();
-void params_band_load();
-
-void params_memory_save(uint16_t id);
-void params_memory_load(uint16_t id);
-
-void params_mode_save();
-void params_mode_load();
-
-void params_band_freq_set(uint64_t freq);
+int32_t params_lo_offset_get();
 
 void params_atu_save(uint32_t val);
 uint32_t params_atu_load(bool *loaded);
-
-void params_band_vfo_clone();
 
 void params_msg_cw_load();
 void params_msg_cw_new(const char *val);

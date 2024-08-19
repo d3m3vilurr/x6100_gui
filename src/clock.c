@@ -6,16 +6,18 @@
  *  Copyright (c) 2022-2023 Belousov Oleg aka R1CBU
  */
 
-#include <time.h>
-#include <sys/time.h>
-#include <pthread.h>
-#include <stdio.h>
 #include "clock.h"
+
 #include "styles.h"
 #include "radio.h"
 #include "util.h"
 #include "backlight.h"
 #include "voice.h"
+
+#include <time.h>
+#include <sys/time.h>
+#include <pthread.h>
+#include <stdio.h>
 
 typedef enum {
     CLOCK_TIME = 0,
@@ -31,21 +33,22 @@ static uint64_t         timeout;
 static float            v_ext;
 static float            v_bat;
 static uint8_t          cap_bat;
+static bool             charging;
 
 static char             str[32];
 
 static void set_state(clock_state_t new_state) {
     state = new_state;
-    
+
     switch (state) {
         case CLOCK_TIME:
             lv_obj_set_style_text_font(obj, &sony_38, 0);
             lv_obj_set_style_pad_ver(obj, 18, 0);
             break;
 
-        case CLOCK_POWER:        
+        case CLOCK_POWER:
             lv_obj_set_style_text_font(obj, &sony_30, 0);
-            lv_obj_set_style_pad_ver(obj, 8, 0);
+            lv_obj_set_style_pad_ver(obj, 5, 0);
             break;
     }
 }
@@ -84,22 +87,46 @@ static void show_time() {
             timeout = ms + params.clock_tx_timeout * 1000;
         }
     }
-        
+
     switch (state) {
         case CLOCK_TIME:
             now = time(NULL);
             t = localtime(&now);
-            
+
             snprintf(str, sizeof(str), "%02i:%02i:%02i", t->tm_hour, t->tm_min, t->tm_sec);
             break;
-            
+
         case CLOCK_POWER:
             pthread_mutex_lock(&power_mux);
+            const char * bat_sym;
+            const char * ext_sym;
+            switch ((uint8_t)(v_bat * 10)) {
+                case 0 ... 56:
+                    bat_sym = LV_SYMBOL_BATTERY_EMPTY;
+                    break;
+                case 57 ... 63:
+                    bat_sym = LV_SYMBOL_BATTERY_1;
+                    break;
+                case 64 ... 70:
+                    bat_sym = LV_SYMBOL_BATTERY_2;
+                    break;
+                case 71 ... 77:
+                    bat_sym = LV_SYMBOL_BATTERY_3;
+                    break;
+                case 78 ... 100:
+                    bat_sym = LV_SYMBOL_BATTERY_FULL;
+                    break;
+            }
+            if (charging) {
+                ext_sym = SYMBOL_PLUG_CHARGE;
+            } else {
+                ext_sym = SYMBOL_PLUG;
+            }
 
             if (v_ext < 3.0f) {
-                snprintf(str, sizeof(str), "BAT %.1fv\n%i%%", v_bat, cap_bat);
+                snprintf(str, sizeof(str), "%s %.1fv\n%i%%", bat_sym, v_bat, cap_bat);
             } else {
-                snprintf(str, sizeof(str), "BAT %.1fv\nEXT %.1fv", v_bat, v_ext);
+                snprintf(str, sizeof(str), "%s %.1fv\n%s %.1fv", bat_sym, v_bat, ext_sym, v_ext);
             }
 
             pthread_mutex_unlock(&power_mux);
@@ -124,39 +151,40 @@ lv_obj_t * clock_init(lv_obj_t * parent) {
     lv_timer_create(show_time, 500, NULL);
 }
 
-void clock_update_power(float ext, float bat, uint8_t cap) {
+void clock_update_power(float ext, float bat, uint8_t cap, bool charge_flag) {
     pthread_mutex_lock(&power_mux);
     v_ext = ext;
     v_bat = bat;
     cap_bat = cap;
+    charging = charge_flag;
     pthread_mutex_unlock(&power_mux);
 }
 
 void clock_set_view(clock_view_t x) {
     params_lock();
     params.clock_view = x;
-    params_unlock(&params.durty.clock_view);
+    params_unlock(&params.dirty.clock_view);
     timeout = get_time();
 }
 
 void clock_set_time_timeout(uint8_t sec) {
     params_lock();
     params.clock_time_timeout = sec;
-    params_unlock(&params.durty.clock_time_timeout);
+    params_unlock(&params.dirty.clock_time_timeout);
     timeout = get_time();
 }
 
 void clock_set_power_timeout(uint8_t sec) {
     params_lock();
     params.clock_power_timeout = sec;
-    params_unlock(&params.durty.clock_power_timeout);
+    params_unlock(&params.dirty.clock_power_timeout);
     timeout = get_time();
 }
 
 void clock_set_tx_timeout(uint8_t sec) {
     params_lock();
     params.clock_tx_timeout = sec;
-    params_unlock(&params.durty.clock_tx_timeout);
+    params_unlock(&params.dirty.clock_tx_timeout);
     timeout = get_time();
 }
 
