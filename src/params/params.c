@@ -95,8 +95,8 @@ params_t params = {
 
     .cw_decoder             = true,
     .cw_tune                = false,
-    .cw_decoder_snr         = 10.0f,
-    .cw_decoder_snr_gist    = 3.0f,
+    .cw_decoder_snr         = 5.0f,
+    .cw_decoder_snr_gist    = 1.0f,
     .cw_decoder_peak_beta   = 0.10f,
     .cw_decoder_noise_beta  = 0.80f,
 
@@ -118,6 +118,7 @@ params_t params = {
     .ft8_band               = 5,
     .ft8_tx_freq            = { .x = 1325,      .name = "ft8_tx_freq" },
     .ft8_auto               = { .x = true,      .name = "ft8_auto" },
+    .ft8_output_gain_offset = 0.0f,
 
     .long_gen               = ACTION_SCREENSHOT,
     .long_app               = ACTION_APP_RECORDER,
@@ -281,7 +282,7 @@ static bool params_load() {
             params.cw_decoder = i;
         } else if (strcmp(name, "cw_tune") == 0) {
             params.cw_tune = i;
-        } else if (strcmp(name, "cw_decoder_snr") == 0) {
+        } else if (strcmp(name, "cw_decoder_snr_2") == 0) {
             params.cw_decoder_snr = i * 0.1f;
         } else if (strcmp(name, "cw_decoder_peak_beta") == 0) {
             params.cw_decoder_peak_beta = i * 0.01f;
@@ -471,7 +472,7 @@ static void params_save() {
 
     if (params.dirty.cw_decoder)            params_write_int("cw_decoder", params.cw_decoder, &params.dirty.cw_decoder);
     if (params.dirty.cw_tune)               params_write_int("cw_tune", params.cw_tune, &params.dirty.cw_tune);
-    if (params.dirty.cw_decoder_snr)        params_write_int("cw_decoder_snr", params.cw_decoder_snr * 10, &params.dirty.cw_decoder_snr);
+    if (params.dirty.cw_decoder_snr)        params_write_int("cw_decoder_snr_2", params.cw_decoder_snr * 10, &params.dirty.cw_decoder_snr);
     if (params.dirty.cw_decoder_peak_beta)  params_write_int("cw_decoder_peak_beta", params.cw_decoder_peak_beta * 100, &params.dirty.cw_decoder_peak_beta);
     if (params.dirty.cw_decoder_noise_beta) params_write_int("cw_decoder_noise_beta", params.cw_decoder_noise_beta * 100, &params.dirty.cw_decoder_noise_beta);
 
@@ -696,6 +697,11 @@ void params_init() {
     pthread_create(&thread, NULL, params_thread, NULL);
     pthread_detach(thread);
     params_modulation_setup(&params_lo_offset_get);
+
+    // Fix for different output poser on different devices
+    if (access("/mnt/.fix_ft8_power", F_OK) == 0) {
+        params.ft8_output_gain_offset = -4.0f;
+    }
 }
 
 int32_t params_lo_offset_get() {
@@ -881,7 +887,7 @@ bool params_bands_find_next(uint64_t freq, bool up, band_t *band) {
     int             rc;
 
     if (up) {
-        rc = sqlite3_prepare_v2(db, "SELECT id,name,start_freq,stop_freq,type FROM bands WHERE (? - 1 < start_freq AND type != 0) ORDER BY start_freq ASC", -1, &stmt, 0);
+        rc = sqlite3_prepare_v2(db, "SELECT id,name,start_freq,stop_freq,type FROM bands WHERE (? < start_freq AND type != 0) ORDER BY start_freq ASC", -1, &stmt, 0);
     } else {
         rc = sqlite3_prepare_v2(db, "SELECT id,name,start_freq,stop_freq,type FROM bands WHERE (? > stop_freq AND type != 0) ORDER BY start_freq DESC", -1, &stmt, 0);
     }

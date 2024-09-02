@@ -58,7 +58,7 @@
 #define FT8_BANDS       14
 #define FT4_BANDS       11
 
-#define WIDTH           775
+#define WIDTH           771
 
 #define UNKNOWN_SNR     99
 
@@ -383,6 +383,7 @@ static void done() {
     pthread_cancel(thread);
     pthread_join(thread, NULL);
     radio_set_modem(false);
+    pthread_mutex_unlock(&audio_mutex);
 
     free(wf.mag);
     windowcf_destroy(frame_window);
@@ -524,37 +525,40 @@ static void table_draw_part_begin_cb(lv_event_t * e) {
         uint32_t    col = dsc->id - row * lv_table_get_col_cnt(obj);
         cell_data_t *cell_data = lv_table_get_cell_user_data(obj, row, col);
 
+        dsc->rect_dsc->bg_opa = LV_OPA_50;
+
         if (cell_data == NULL) {
             dsc->label_dsc->align = LV_TEXT_ALIGN_CENTER;
-            dsc->rect_dsc->bg_color = lv_color_white();
-            dsc->rect_dsc->bg_opa = 128;
+            dsc->rect_dsc->bg_color = lv_color_hex(0x303030);
+        } else {
+            switch (cell_data->cell_type) {
+                case CELL_RX_INFO:
+                    dsc->label_dsc->align = LV_TEXT_ALIGN_CENTER;
+                    dsc->rect_dsc->bg_color = lv_color_hex(0x303030);
+                    break;
 
-            return;
+                case CELL_RX_CQ:
+                    dsc->rect_dsc->bg_color = lv_color_hex(0x00DD00);
+                    break;
+
+                case CELL_RX_TO_ME:
+                    dsc->rect_dsc->bg_color = lv_color_hex(0xFF0000);
+                    break;
+
+                case CELL_TX_MSG:
+                    dsc->rect_dsc->bg_color = lv_color_hex(0x0000FF);
+                    break;
+                default:
+                    dsc->rect_dsc->bg_color = lv_color_black();
+                    break;
+            }
         }
 
-        switch (cell_data->cell_type) {
-            case CELL_RX_INFO:
-                dsc->label_dsc->align = LV_TEXT_ALIGN_CENTER;
-                dsc->rect_dsc->bg_color = lv_color_white();
-                dsc->rect_dsc->bg_opa = 128;
-                break;
+        uint16_t    selected_row, selected_col;
+        lv_table_get_selected_cell(obj, &selected_row, &selected_col);
 
-            case CELL_RX_CQ:
-                dsc->rect_dsc->bg_color = lv_color_hex(0x00DD00);
-                dsc->rect_dsc->bg_opa = 128;
-                break;
-
-            case CELL_RX_TO_ME:
-                dsc->rect_dsc->bg_color = lv_color_hex(0xFF0000);
-                dsc->rect_dsc->bg_opa = 128;
-                break;
-
-            case CELL_TX_MSG:
-                dsc->rect_dsc->bg_color = lv_color_hex(0x0000DD);
-                dsc->rect_dsc->bg_opa = 128;
-                break;
-            default:
-                break;
+        if (selected_row == row) {
+            dsc->rect_dsc->bg_color = lv_color_lighten(dsc->rect_dsc->bg_color, 20);
         }
     }
 }
@@ -668,6 +672,7 @@ static void load_band() {
 static void clean() {
     reset();
 
+    lv_table_set_row_cnt(table, 0);
     lv_table_set_row_cnt(table, 1);
     lv_table_set_cell_value(table, 0, 0, "Wait sync");
 
@@ -827,7 +832,7 @@ static void construct_cb(lv_obj_t *parent) {
     lv_obj_set_pos(table, 13, 13 + 55);
 
     lv_table_set_col_cnt(table, 1);
-    lv_table_set_col_width(table, 0, WIDTH - 5);
+    lv_table_set_col_width(table, 0, WIDTH - 2);
 
     lv_obj_set_style_border_width(table, 0, LV_PART_ITEMS);
 
@@ -837,16 +842,11 @@ static void construct_cb(lv_obj_t *parent) {
     lv_obj_set_style_border_color(table, lv_color_white(), LV_PART_MAIN);
     lv_obj_set_style_border_opa(table, 128, LV_PART_MAIN);
 
-    lv_obj_set_style_bg_opa(table, LV_OPA_TRANSP, LV_PART_ITEMS);
-    lv_obj_set_style_text_color(table, lv_color_white(), LV_PART_ITEMS);
+    lv_obj_set_style_text_color(table, lv_color_hex(0xC0C0C0), LV_PART_ITEMS);
     lv_obj_set_style_pad_top(table, 3, LV_PART_ITEMS);
     lv_obj_set_style_pad_bottom(table, 3, LV_PART_ITEMS);
     lv_obj_set_style_pad_left(table, 5, LV_PART_ITEMS);
     lv_obj_set_style_pad_right(table, 0, LV_PART_ITEMS);
-
-    lv_obj_set_style_text_color(table, lv_color_black(), LV_PART_ITEMS | LV_STATE_EDITED);
-    lv_obj_set_style_bg_color(table, lv_color_white(), LV_PART_ITEMS | LV_STATE_EDITED);
-    lv_obj_set_style_bg_opa(table, 128, LV_PART_ITEMS | LV_STATE_EDITED);
 
     lv_table_set_cell_value(table, 0, 0, "Wait sync");
 
@@ -1147,11 +1147,11 @@ static bool make_answer(const msg_t * msg, int8_t snr, bool rx_odd) {
 
 
 static void tx_worker() {
-    uint8_t tones[FT8_NN];
     uint8_t packed[FTX_LDPC_K_BYTES];
     int     rc = pack77(tx_msg, packed);
+    uint8_t tones[FT4_NN];
+    uint8_t n_tones;
 
-    const uint16_t signal_freq = 1325;
 
     if (rc < 0) {
         LV_LOG_ERROR("Cannot parse message %i", rc);
@@ -1159,11 +1159,18 @@ static void tx_worker() {
         return;
     }
 
-    ft8_encode(packed, tones);
+    if (params.ft8_protocol == PROTO_FT8) {
+        n_tones = FT8_NN;
+        ft8_encode(packed, tones);
+    } else if (params.ft8_protocol == PROTO_FT4) {
+        n_tones = FT4_NN;
+        ft4_encode(packed, tones);
+    }
 
+    const uint16_t signal_freq = 1325;
     uint32_t    n_samples = 0;
     float       symbol_bt = (params.ft8_protocol == PROTO_FT4) ? FT4_SYMBOL_BT : FT8_SYMBOL_BT;
-    int16_t     *samples = gfsk_synth(tones, FT8_NN, signal_freq, symbol_bt, symbol_period, &n_samples);
+    int16_t     *samples = gfsk_synth(tones, n_tones, signal_freq, symbol_bt, symbol_period, &n_samples);
     int16_t     *ptr = samples;
     size_t      part;
 
@@ -1173,7 +1180,8 @@ static void tx_worker() {
     radio_set_freq(radio_freq + params.ft8_tx_freq.x - signal_freq);
     radio_set_modem(true);
 
-    float gain_scale = -12.0f + log10f(params.pwr) * 5;
+    float gain_scale = -8.2f + params.ft8_output_gain_offset + log10f(params.pwr) * 5;
+
     while (true) {
         if (n_samples <= 0 || state != TX_PROCESS) {
             state = RX_PROCESS;
