@@ -6,11 +6,8 @@
  *  Copyright (c) 2022-2023 Belousov Oleg aka R1CBU
  */
 
-#include <unistd.h>
-#include <stdint.h>
-#include <stdlib.h>
-
 #include "main_screen.h"
+
 #include "styles.h"
 #include "spectrum.h"
 #include "waterfall.h"
@@ -49,6 +46,11 @@
 #include "buttons.h"
 #include "recorder.h"
 #include "voice.h"
+#include "pubsub_ids.h"
+
+#include <unistd.h>
+#include <stdint.h>
+#include <stdlib.h>
 
 
 static uint16_t     spectrum_height = (480 / 3);
@@ -73,6 +75,10 @@ static void freq_update();
 void mem_load(uint16_t id) {
     params_memory_load(id);
 
+    // Fix mode fox FT8/FT4
+    if ((id >= MEM_FT8_ID) && (id < MEM_FT4_ID + 100) && (params_band_cur_mode_get() != x6100_mode_usb_dig)) {
+        params_band_cur_mode_set_no_save(x6100_mode_usb_dig);
+    }
     if (params_bands_find(params_band_cur_freq_get(), &params.freq_band)) {
         if (params.freq_band.type != 0) {
             params.band = params.freq_band.id;
@@ -85,7 +91,8 @@ void mem_load(uint16_t id) {
 
     radio_vfo_set();
     radio_filters_setup();
-    spectrum_zoom_factor_set(params_current_mode_spectrum_factor_get());
+    uint16_t zoom_factor = params_current_mode_spectrum_factor_get();
+    lv_msg_send(MSG_SPECTRUM_ZOOM_CHANGED, &zoom_factor);
     spectrum_min_max_reset();
     waterfall_min_max_reset();
 
@@ -435,7 +442,8 @@ static void change_mode(keypad_key_t key, keypad_state_t state) {
 
     radio_set_mode(params_band_vfo_get(), next_mode);
     radio_filters_setup();
-    spectrum_zoom_factor_set(params_current_mode_spectrum_factor_get());
+    uint16_t zoom_factor = params_current_mode_spectrum_factor_get();
+    lv_msg_send(MSG_SPECTRUM_ZOOM_CHANGED, &zoom_factor);
     info_params_set();
     pannel_visible();
 
@@ -1105,7 +1113,7 @@ lv_obj_t * main_screen() {
     lv_obj_add_style(obj, &background_style, LV_PART_MAIN);
     lv_obj_clear_flag(obj, LV_OBJ_FLAG_SCROLLABLE);
 
-    spectrum = spectrum_init(obj, params_current_mode_spectrum_factor_get());
+    spectrum = spectrum_init(obj);
     main_screen_keys_enable(true);
 
     lv_obj_add_event_cb(spectrum, spectrum_key_cb, LV_EVENT_KEY, NULL);
@@ -1166,6 +1174,9 @@ lv_obj_t * main_screen() {
 
     msg_set_text_fmt("X6100 de R1CBU " VERSION);
     msg_set_timeout(2000);
+
+    uint16_t spectroom_zoom = params_current_mode_spectrum_factor_get();
+    lv_msg_send(MSG_SPECTRUM_ZOOM_CHANGED, &spectroom_zoom);
 
     return obj;
 }

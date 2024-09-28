@@ -41,6 +41,7 @@ params_t params = {
     .waterfall_auto_max     = { .x = true,  .name = "waterfall_auto_max",       .voice = "Auto maximum of waterfall" },
     .waterfall_smooth_scroll= { .x = true,  .name = "waterfall_smooth_scroll",  .voice = "Waterfall smooth scroll"},
     .waterfall_center_line  = { .x = true,  .name = "waterfall_center_line",    .voice = "Waterfall center line"},
+    .waterfall_zoom         = { .x = true,  .name = "waterfall_zoom",           .voice = "Waterfall zoom"},
     .mag_freq               = { .x = true,  .name = "mag_freq",                 .voice = "Magnification of frequency" },
     .mag_info               = { .x = true,  .name = "mag_info",                 .voice = "Magnification of info" },
     .mag_alc                = { .x = true,  .name = "mag_alc",                  .voice = "Magnification of A L C" },
@@ -377,6 +378,7 @@ static bool params_load() {
         if (params_load_bool(&params.waterfall_auto_max, name, i)) continue;
         if (params_load_bool(&params.waterfall_smooth_scroll, name, i)) continue;
         if (params_load_bool(&params.waterfall_center_line, name, i)) continue;
+        if (params_load_bool(&params.waterfall_zoom, name, i)) continue;
         if (params_load_bool(&params.spmode, name, i)) continue;
         if (params_load_bool(&params.ft8_auto, name, i)) continue;
 
@@ -546,6 +548,7 @@ static void params_save() {
     params_save_bool(&params.waterfall_auto_max);
     params_save_bool(&params.waterfall_smooth_scroll);
     params_save_bool(&params.waterfall_center_line);
+    params_save_bool(&params.waterfall_zoom);
     params_save_bool(&params.spmode);
     params_save_bool(&params.ft8_auto);
 
@@ -965,4 +968,48 @@ uint8_t params_uint8_change(params_uint8_t *var, int16_t df) {
     params_uint8_set(var, x);
 
     return var->x;
+}
+
+inline char * params_charger_str_get(radio_charger_t val) {
+    switch (val) {
+        case RADIO_CHARGER_OFF:
+            return "Off";
+        case RADIO_CHARGER_ON:
+            return "On";
+        case RADIO_CHARGER_SHADOW:
+            return "Shadow";
+    }
+}
+
+inline char * params_mic_str_get(x6100_mic_sel_t val) {
+    switch (val) {
+        case x6100_mic_builtin:
+            return "Built-In";
+        case x6100_mic_handle:
+            return "Handle";
+        case x6100_mic_auto:
+            return "Auto";
+        default:
+            return "";
+    }
+}
+
+inline char * params_key_mode_str_get(x6100_key_mode_t val) {
+    switch (val) {
+        case x6100_key_manual:
+            return "Manual";
+        case x6100_key_auto_left:
+            return "Auto-L";
+        case x6100_key_auto_right:
+            return "Auto-R";
+    }
+}
+
+inline char * params_iambic_mode_str_ger(x6100_iambic_mode_t val) {
+    switch (val) {
+        case x6100_iambic_a:
+            return "A";
+        case x6100_iambic_b:
+            return "B";
+    }
 }

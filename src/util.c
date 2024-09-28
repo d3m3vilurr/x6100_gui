@@ -12,6 +12,8 @@
 #include <math.h>
 #include <sys/time.h>
 #include <time.h>
+#include <string.h>
+#include <string.h>
 
 
 /**
@@ -230,4 +232,42 @@ size_t argmax(float * x, size_t n) {
         }
     }
     return pos;
+}
+
+
+char * util_canonize_callsign(const char * callsign, bool strip_slashes) {
+    if (!callsign) {
+        return NULL;
+    }
+
+    char *result = NULL;
+
+    if (strip_slashes) {
+        char *s = strdup(callsign);
+        char *token = strtok(s, "/");
+        while(token) {
+            if ((
+                ((token[0] >= '0') && (token[0] <= '9')) ||
+                ((token[1] >= '0') && (token[1] <= '9')) ||
+                ((token[2] >= '0') && (token[2] <= '9'))
+            ) && strlen(token) >= 4) {
+                result = strdup(token);
+                break;
+            }
+            token = strtok(NULL, "/");
+        }
+        free(s);
+    } else {
+        // strip < and > from remote call
+        size_t callsign_len = strlen(callsign);
+        if ((callsign[0] == '<') && (callsign[callsign_len - 1] == '>')) {
+            result = strdup(callsign + 1);
+            result[callsign_len - 2] = 0;
+        }
+
+    }
+    if (!result) {
+        result = strdup(callsign);
+    }
+    return result;
 }

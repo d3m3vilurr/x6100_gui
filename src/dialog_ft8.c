@@ -6,19 +6,10 @@
  *  Copyright (c) 2022-2023 Belousov Oleg aka R1CBU
  */
 
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
-#include <unistd.h>
-#include <math.h>
-#include <time.h>
-#include <sys/time.h>
-#include <pthread.h>
-#include <errno.h>
+#include "dialog_ft8.h"
 
 #include "lvgl/lvgl.h"
 #include "dialog.h"
-#include "dialog_ft8.h"
 #include "styles.h"
 #include "params/params.h"
 #include "radio.h"
@@ -44,6 +35,43 @@
 #include "ft8/crc.h"
 #include "gfsk.h"
 #include "adif.h"
+#include "qso_log.h"
+
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+#include <unistd.h>
+#include <math.h>
+#include <time.h>
+#include <sys/time.h>
+#include <pthread.h>
+#include <errno.h>
+
+#define FT8_160M_KR_ID  (100 - MEM_FT8_ID)
+#define FT8_160M_ID     (101 - MEM_FT8_ID)
+#define FT8_80M_JP_ID   (102 - MEM_FT8_ID)
+#define FT8_80M_ID      (103 - MEM_FT8_ID)
+#define FT8_60M_ID      (104 - MEM_FT8_ID)
+#define FT8_40M_JP_ID   (105 - MEM_FT8_ID)
+#define FT8_40M_ID      (106 - MEM_FT8_ID)
+#define FT8_30M_ID      (107 - MEM_FT8_ID)
+#define FT8_20M_ID      (108 - MEM_FT8_ID)
+#define FT8_17M_ID      (109 - MEM_FT8_ID)
+#define FT8_15M_ID      (110 - MEM_FT8_ID)
+#define FT8_12M_ID      (111 - MEM_FT8_ID)
+#define FT8_10M_ID      (112 - MEM_FT8_ID)
+#define FT8_6M_ID       (113 - MEM_FT8_ID)
+#define FT4_80M_JP_ID   (200 - MEM_FT4_ID)
+#define FT4_80M_ID      (201 - MEM_FT4_ID)
+#define FT4_40M_JP_ID   (202 - MEM_FT4_ID)
+#define FT4_40M_ID      (203 - MEM_FT4_ID)
+#define FT4_30M_ID      (204 - MEM_FT4_ID)
+#define FT4_20M_ID      (205 - MEM_FT4_ID)
+#define FT4_17M_ID      (206 - MEM_FT4_ID)
+#define FT4_15M_ID      (207 - MEM_FT4_ID)
+#define FT4_12M_ID      (208 - MEM_FT4_ID)
+#define FT4_10M_ID      (209 - MEM_FT4_ID)
+#define FT4_6M_ID       (210 - MEM_FT4_ID)
 
 #define DECIM           4
 #define SAMPLE_RATE     (AUDIO_CAPTURE_RATE / DECIM)
@@ -55,12 +83,21 @@
 #define FREQ_OSR        2
 #define TIME_OSR        4
 
-#define FT8_BANDS       14
-#define FT4_BANDS       11
-
 #define WIDTH           771
 
 #define UNKNOWN_SNR     99
+
+#define MAX_PWR         5.0f
+
+#define FT8_WIDTH_HZ    50
+#define FT4_WIDTH_HZ    83
+
+#define MAX_TABLE_MSG   512
+#define CLEAN_N_ROWS    64
+
+#define WAIT_SYNC_TEXT "Wait sync"
+
+#define ARRAY_SIZE(arr) (sizeof(arr) / sizeof(arr[0]))
 
 typedef enum {
     RX_PROCESS,
@@ -113,6 +150,8 @@ typedef struct {
     bool            odd;
     msg_t           msg;
     char            text[128];
+
+    qso_log_search_worked_t       worked_type;
 } cell_data_t;
 
 /**
@@ -130,6 +169,46 @@ typedef struct {
 } ft8_qso_item_t;
 
 
+typedef struct {
+    uint8_t cur;
+    uint8_t next;
+    uint8_t prev;
+    uint8_t another;
+} band_relations_t;
+
+band_relations_t ft8_relations[] = {
+    {FT8_160M_KR_ID,    FT8_160M_ID,    FT8_6M_ID,      FT4_80M_JP_ID},
+    {FT8_160M_ID,       FT8_80M_JP_ID,  FT8_160M_KR_ID, FT4_80M_JP_ID},
+    {FT8_80M_JP_ID,     FT8_80M_ID,     FT8_160M_ID,    FT4_80M_JP_ID},
+    {FT8_80M_ID,        FT8_60M_ID,     FT8_80M_JP_ID,  FT4_80M_ID},
+    {FT8_60M_ID,        FT8_40M_JP_ID,  FT8_80M_ID,     FT4_40M_JP_ID},
+    {FT8_40M_JP_ID,     FT8_40M_ID,     FT8_60M_ID,     FT4_40M_JP_ID},
+    {FT8_40M_ID,        FT8_30M_ID,     FT8_40M_JP_ID,  FT4_40M_ID},
+    {FT8_30M_ID,        FT8_20M_ID,     FT8_40M_ID,     FT4_30M_ID},
+    {FT8_20M_ID,        FT8_17M_ID,     FT8_30M_ID,     FT4_20M_ID},
+    {FT8_17M_ID,        FT8_15M_ID,     FT8_20M_ID,     FT4_17M_ID},
+    {FT8_15M_ID,        FT8_12M_ID,     FT8_17M_ID,     FT4_15M_ID},
+    {FT8_12M_ID,        FT8_10M_ID,     FT8_15M_ID,     FT4_12M_ID},
+    {FT8_10M_ID,        FT8_6M_ID,      FT8_12M_ID,     FT4_10M_ID},
+    {FT8_6M_ID,         FT8_160M_KR_ID,  FT8_10M_ID,    FT4_6M_ID},
+};
+
+
+band_relations_t ft4_relations[] = {
+    {FT4_80M_JP_ID,     FT4_80M_ID,     FT4_6M_ID,      FT8_80M_JP_ID},
+    {FT4_80M_ID,        FT4_40M_JP_ID,  FT4_80M_JP_ID,  FT8_80M_ID},
+    {FT4_40M_JP_ID,     FT4_40M_ID,     FT4_80M_ID,     FT8_40M_JP_ID},
+    {FT4_40M_ID,        FT4_30M_ID,     FT4_40M_JP_ID,  FT8_40M_ID},
+    {FT4_30M_ID,        FT4_20M_ID,     FT4_40M_ID,     FT8_30M_ID},
+    {FT4_20M_ID,        FT4_17M_ID,     FT4_30M_ID,     FT8_20M_ID},
+    {FT4_17M_ID,        FT4_15M_ID,     FT4_20M_ID,     FT8_17M_ID},
+    {FT4_15M_ID,        FT4_12M_ID,     FT4_17M_ID,     FT8_15M_ID},
+    {FT4_12M_ID,        FT4_10M_ID,     FT4_15M_ID,     FT8_12M_ID},
+    {FT4_10M_ID,        FT4_6M_ID,      FT4_12M_ID,     FT8_10M_ID},
+    {FT4_6M_ID,         FT4_80M_JP_ID,  FT4_10M_ID,     FT8_6M_ID},
+};
+
+
 static ft8_state_t          state = RX_PROCESS;
 static bool                 odd;
 static bool                 tx_enabled=true;
@@ -140,7 +219,6 @@ static char                 tx_msg[64] = "";
 static ft8_qso_item_t       qso_item = {.rst_s=UNKNOWN_SNR, .rst_r=UNKNOWN_SNR};
 
 static lv_obj_t             *table;
-static int16_t              table_rows;
 
 static lv_timer_t           *timer = NULL;
 static lv_anim_t            fade;
@@ -210,20 +288,20 @@ static bool get_time_slot(struct timespec now);
 static bool str_equal(const char * a, const char * b);
 
 // button label is current state, press action and name - next state
-static button_item_t button_show_cq = { .label = "Show\nAll", .press = show_cq_cb };
-static button_item_t button_show_all = { .label = "Show\nCQ", .press = show_all_cb };
+static button_item_t button_show_cq = { .label = "Show:\nAll", .press = show_cq_cb };
+static button_item_t button_show_all = { .label = "Show:\nCQ", .press = show_all_cb };
 
-static button_item_t button_mode_ft4 = { .label = "Mode\nFT8", .press = mode_ft4_cb };
-static button_item_t button_mode_ft8 = { .label = "Mode\nFT4", .press = mode_ft8_cb };
+static button_item_t button_mode_ft4 = { .label = "Mode:\nFT8", .press = mode_ft4_cb };
+static button_item_t button_mode_ft8 = { .label = "Mode:\nFT4", .press = mode_ft8_cb };
 
-static button_item_t button_tx_cq_en = { .label = "TX CQ\nDisabled", .press = tx_cq_en_cb };
-static button_item_t button_tx_cq_dis = { .label = "TX CQ\nEnabled", .press = tx_cq_dis_cb };
+static button_item_t button_tx_cq_en = { .label = "TX CQ:\nDisabled", .press = tx_cq_en_cb };
+static button_item_t button_tx_cq_dis = { .label = "TX CQ:\nEnabled", .press = tx_cq_dis_cb };
 
-static button_item_t button_tx_call_en = { .label = "TX Call\nDisabled", .press = tx_call_en_cb, .hold = tx_cq_dis_cb };
-static button_item_t button_tx_call_dis = { .label = "TX Call\nEnabled", .press = tx_call_dis_cb, .hold = tx_cq_dis_cb };
+static button_item_t button_tx_call_en = { .label = "TX Call:\nDisabled", .press = tx_call_en_cb, .hold = tx_cq_dis_cb };
+static button_item_t button_tx_call_dis = { .label = "TX Call:\nEnabled", .press = tx_call_dis_cb, .hold = tx_cq_dis_cb };
 
-static button_item_t button_auto_en = { .label = "Auto\nDisabled", .press = mode_auto_cb };
-static button_item_t button_auto_dis = { .label = "Auto\nEnabled", .press = mode_auto_cb };
+static button_item_t button_auto_en = { .label = "Auto:\nDisabled", .press = mode_auto_cb };
+static button_item_t button_auto_dis = { .label = "Auto:\nEnabled", .press = mode_auto_cb };
 
 static button_item_t button_time_sync = { .label = "Time\nSync", .press = time_sync };
 
@@ -244,23 +322,26 @@ static void save_qso() {
         (qso_item.rst_r == UNKNOWN_SNR) ||
         (strlen(qso_item.remote_callsign) == 0)
     ) {
-        LV_LOG_INFO("Can't save QSO - not enough information");
+        LV_LOG_USER("Can't save QSO - not enough information");
         return;
     }
     time_t now = time(NULL);
-    const char * mode = params.ft8_protocol == PROTO_FT8 ? "FT8" : "FT4";
 
-    // strip < and > from remote call
-    size_t remote_callsign_len = strlen(qso_item.remote_callsign);
-    char * remote_callsign = qso_item.remote_callsign;
-    if ((remote_callsign[0] == '<') && (remote_callsign[remote_callsign_len - 1] == '>')) {
-        remote_callsign[remote_callsign_len - 1] = 0;
-        remote_callsign++;
-    }
+    char * canonized_call = util_canonize_callsign(qso_item.remote_callsign, false);
+    qso_log_record_t qso = qso_log_record_create(
+        params.callsign.x,
+        canonized_call,
+        now, params.ft8_protocol == PROTO_FT8 ? MODE_FT8 : MODE_FT4,
+        qso_item.rst_s, qso_item.rst_r, params_band_cur_freq_get(), NULL, NULL,
+        params.qth.x, qso_item.remote_qth
+    );
+    free(canonized_call);
 
-    float freq_mhz = params_band_cur_freq_get() / 1000000.0f;
-    adif_add_qso(ft8_log, params.callsign.x, remote_callsign, now, mode,
-        qso_item.rst_s, qso_item.rst_r, freq_mhz, params.qth.x, qso_item.remote_qth);
+    adif_add_qso(ft8_log, qso);
+
+    // Save QSO to sqlite log
+    qso_log_record_save(qso);
+
     msg_set_text_fmt("QSO saved");
 }
 
@@ -483,26 +564,54 @@ void static process(float complex *frame) {
     wf.num_blocks++;
 }
 
+static void truncate_table() {
+    lv_coord_t     removed_rows_height = 0;
+    uint16_t       table_rows = lv_table_get_row_cnt(table);
+    if (table_rows > MAX_TABLE_MSG) {
+        LV_LOG_USER("Start");
+
+        lv_table_t *table_obj = (lv_table_t*) table;
+
+        for (size_t i = 0; i < CLEAN_N_ROWS; i++) {
+            removed_rows_height += table_obj->row_h[i];
+        }
+
+        if (table_obj->row_act > CLEAN_N_ROWS) {
+            table_obj->row_act -= CLEAN_N_ROWS;
+        } else {
+            table_obj->row_act = 0;
+        }
+
+        for (uint16_t i = CLEAN_N_ROWS; i < table_rows; i++) {
+            cell_data_t *cell_data_copy = malloc(sizeof(cell_data_t));
+            lv_table_set_cell_value(table, i-CLEAN_N_ROWS, 0, lv_table_get_cell_value(table, i, 0));
+            *cell_data_copy = *(cell_data_t *) lv_table_get_cell_user_data(table, i, 0);
+            lv_table_set_cell_user_data(table, i-CLEAN_N_ROWS, 0, cell_data_copy);
+        }
+        table_rows -= CLEAN_N_ROWS;
+
+        lv_table_set_row_cnt(table, table_rows);
+        lv_obj_scroll_by_bounded(table, 0, removed_rows_height, LV_ANIM_OFF);
+    }
+}
+
 static void add_msg_cb(lv_event_t * e) {
+    truncate_table();
     cell_data_t *cell_data = (cell_data_t *) lv_event_get_param(e);
     uint16_t    row = 0;
     uint16_t    col = 0;
     bool        scroll;
 
     lv_table_get_selected_cell(table, &row, &col);
+    uint16_t table_rows = lv_table_get_row_cnt(table);
+    if ((table_rows == 1) && strcmp(lv_table_get_cell_value(table, 0, 0), WAIT_SYNC_TEXT) == 0) {
+        table_rows--;
+    }
     scroll = table_rows == (row + 1);
 
     // Copy data, because original event data will be deleted
     cell_data_t *cell_data_copy = malloc(sizeof(cell_data_t));
     *cell_data_copy = *cell_data;
-#ifdef MAX_TABLE_MSG
-    if (table_rows > MAX_TABLE_MSG) {
-        for (uint16_t i = 1; i < table_rows; i++)
-            lv_table_set_cell_value(table, i-1, 0, lv_table_get_cell_value(table, i, 0));
-
-        table_rows--;
-    }
-#endif
 
     lv_table_set_cell_value(table, table_rows, 0, cell_data_copy->text);
     lv_table_set_cell_user_data(table, table_rows, 0, cell_data_copy);
@@ -512,8 +621,6 @@ static void add_msg_cb(lv_event_t * e) {
 
         lv_event_send(table, LV_EVENT_KEY, &c);
     }
-
-    table_rows++;
 }
 
 static void table_draw_part_begin_cb(lv_event_t * e) {
@@ -538,7 +645,23 @@ static void table_draw_part_begin_cb(lv_event_t * e) {
                     break;
 
                 case CELL_RX_CQ:
-                    dsc->rect_dsc->bg_color = lv_color_hex(0x00DD00);
+                    switch (cell_data->worked_type) {
+                        case SEARCH_WORKED_NO:
+                            // green
+                            dsc->rect_dsc->bg_color = lv_color_hex(0x00DD00);
+                            break;
+                        case SEARCH_WORKED_YES:
+                            // dark green
+                            dsc->label_dsc->opa = LV_OPA_90;
+                            dsc->rect_dsc->bg_color = lv_color_hex(0x2e5a00);
+                            break;
+                        case SEARCH_WORKED_SAME_MODE:
+                            // darker green
+                            dsc->label_dsc->decor = LV_TEXT_DECOR_STRIKETHROUGH;
+                            dsc->label_dsc->opa = LV_OPA_80;
+                            dsc->rect_dsc->bg_color = lv_color_hex(0x224400);
+                            break;
+                    }
                     break;
 
                 case CELL_RX_TO_ME:
@@ -649,24 +772,15 @@ static void load_band() {
     switch (params.ft8_protocol) {
         case PROTO_FT8:
             mem_id = MEM_FT8_ID;
-
-            if (params.ft8_band > FT8_BANDS - 1) {
-                params.ft8_band = FT8_BANDS - 1;
-            }
+            lv_finder_set_width(finder, FT8_WIDTH_HZ);
             break;
 
         case PROTO_FT4:
             mem_id = MEM_FT4_ID;
-
-            if (params.ft8_band > FT4_BANDS - 1) {
-                params.ft8_band = FT4_BANDS - 1;
-            }
+            lv_finder_set_width(finder, FT4_WIDTH_HZ);
             break;
     }
-
     mem_load(mem_id + params.ft8_band);
-    // Force UDB-D for FT8
-    radio_set_cur_mode(x6100_mode_usb_dig);
 }
 
 static void clean() {
@@ -674,11 +788,9 @@ static void clean() {
 
     lv_table_set_row_cnt(table, 0);
     lv_table_set_row_cnt(table, 1);
-    lv_table_set_cell_value(table, 0, 0, "Wait sync");
+    lv_table_set_cell_value(table, 0, 0, WAIT_SYNC_TEXT);
 
     lv_waterfall_clear_data(waterfall);
-
-    table_rows = 0;
 
     int32_t *c = malloc(sizeof(int32_t));
     *c = LV_KEY_UP;
@@ -686,32 +798,41 @@ static void clean() {
     lv_event_send(table, LV_EVENT_KEY, c);
 }
 
+static band_relations_t * get_band_relation() {
+    int band = params.ft8_band;
+
+    band_relations_t *rel;
+    size_t arr_size;
+
+    switch (params.ft8_protocol) {
+        case PROTO_FT8:
+            rel = ft8_relations;
+            arr_size = ARRAY_SIZE(ft8_relations);
+            break;
+        case PROTO_FT4:
+            rel = ft4_relations;
+            arr_size = ARRAY_SIZE(ft4_relations);
+            break;
+    }
+    for (size_t i = 0; i < arr_size; i++){
+        if (rel[i].cur == band) {
+            rel += i;
+            break;
+        }
+    }
+    return rel;
+}
+
 static void band_cb(lv_event_t * e) {
     int band = params.ft8_band;
     int max_band = 0;
 
-    switch (params.ft8_protocol) {
-        case PROTO_FT8:
-            max_band = FT8_BANDS - 1;
-            break;
-
-        case PROTO_FT4:
-            max_band = FT4_BANDS - 1;
-            break;
-    }
+    band_relations_t *rel = get_band_relation();
 
     if (lv_event_get_code(e) == EVENT_BAND_UP) {
-        band++;
-
-        if (band > max_band) {
-            band = 0;
-        }
+        band = rel->next;
     } else {
-        band--;
-
-        if (band < 0) {
-            band = max_band;
-        }
+        band = rel->prev;
     }
 
     params_lock();
@@ -752,7 +873,6 @@ static void rotary_cb(int32_t diff) {
     }
 
     params_uint16_set(&params.ft8_tx_freq, f);
-
 
     lv_finder_set_value(finder, f);
     lv_obj_invalidate(finder);
@@ -863,8 +983,6 @@ static void construct_cb(lv_obj_t *parent) {
     lv_group_add_obj(keyboard_group, table);
     lv_group_set_editing(keyboard_group, true);
 
-    table_rows = 0;
-
     if (params.ft8_show_all) {
         buttons_load(0, &button_show_cq);
     } else {
@@ -899,9 +1017,9 @@ static void construct_cb(lv_obj_t *parent) {
 
     init();
 
-    if (params.pwr > 5.0f) {
-        radio_set_pwr(5.0f);
-        msg_set_text_fmt("Power was limited to 5W");
+    if (params.pwr > MAX_PWR) {
+        radio_set_pwr(MAX_PWR);
+        msg_set_text_fmt("Power was limited to %0.0fW", MAX_PWR);
     }
 }
 
@@ -922,8 +1040,13 @@ static void show_all_cb(lv_event_t * e) {
 }
 
 static void mode_ft4_cb(lv_event_t * e) {
+
+    band_relations_t *rel = get_band_relation();
+
     params_lock();
     params.ft8_protocol = PROTO_FT4;
+    params.ft8_band = rel->another;
+    params.dirty.ft8_band = true;
     params_unlock(&params.dirty.ft8_protocol);
 
     buttons_load(1, &button_mode_ft8);
@@ -935,8 +1058,11 @@ static void mode_ft4_cb(lv_event_t * e) {
 }
 
 static void mode_ft8_cb(lv_event_t * e) {
+    band_relations_t *rel = get_band_relation();
     params_lock();
     params.ft8_protocol = PROTO_FT8;
+    params.ft8_band = rel->another;
+    params.dirty.ft8_band = true;
     params_unlock(&params.dirty.ft8_protocol);
 
     buttons_load(1, &button_mode_ft4);
@@ -961,6 +1087,7 @@ static void tx_cq_en_cb(lv_event_t * e) {
     }
 
     buttons_load(2, &button_tx_cq_dis);
+    clear_qso();
     make_cq_msg();
     msg_set_text_fmt("Next TX: %s", tx_msg);
     cq_enabled = true;
@@ -1180,7 +1307,7 @@ static void tx_worker() {
     radio_set_freq(radio_freq + params.ft8_tx_freq.x - signal_freq);
     radio_set_modem(true);
 
-    float gain_scale = -8.2f + params.ft8_output_gain_offset + log10f(params.pwr) * 5;
+    float gain_scale = -8.2f + params.ft8_output_gain_offset + log10f(LV_MIN(params.pwr, MAX_PWR)) * 5;
 
     while (true) {
         if (n_samples <= 0 || state != TX_PROCESS) {
@@ -1299,6 +1426,7 @@ static void add_tx_text(const char * text) {
  * Parse and add RX messages to the table
  */
 static void add_rx_text(int16_t snr, const char * text, bool odd) {
+    static size_t n_found_items;
     ft8_cell_type_t cell_type;
 
     msg_t msg = parse_rx_msg(text);
@@ -1333,6 +1461,13 @@ static void add_rx_text(int16_t snr, const char * text, bool odd) {
         cell_type = CELL_RX_MSG;
     }
     cell_data_t  *cell_data = malloc(sizeof(cell_data_t));
+    if (msg.type == MSG_TYPE_CQ) {
+        cell_data->worked_type = qso_log_search_worked(
+            msg.call_from,
+            params.ft8_protocol == PROTO_FT8 ? MODE_FT8 : MODE_FT4,
+            qso_log_freq_to_band(params_band_cur_freq_get())
+        );
+    }
 
     cell_data->cell_type = cell_type;
     strncpy(cell_data->text, text, sizeof(cell_data->text) - 1);

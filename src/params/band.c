@@ -16,6 +16,7 @@
 
 #include "../meter.h"
 #include "../util.h"
+#include "../pubsub_ids.h"
 
 typedef struct {
     params_uint64_t freq;
@@ -371,6 +372,11 @@ x6100_mode_t params_band_cur_mode_get()
     return get_cur_vfo_params()->mode.x;
 }
 
+x6100_mode_t params_band_cur_mode_set_no_save(x6100_mode_t mode)
+{
+    get_cur_vfo_params()->mode.x = mode;
+}
+
 x6100_agc_t params_band_cur_agc_get()
 {
     return get_cur_vfo_params()->agc.x;
@@ -484,6 +490,7 @@ uint16_t params_band_rfg_set(int16_t rfg)
         params_lock();
         params_band.rfg.x = rfg;
         params_band.rfg.dirty = true;
+        lv_msg_send(MSG_PARAM_CHANGED, NULL);
         params_unlock(NULL);
     }
     return params_band.rfg.x;

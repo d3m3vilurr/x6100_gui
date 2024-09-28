@@ -8,15 +8,18 @@
 
 #include "cw_tune_ui.h"
 
-#include <math.h>
 #include "styles.h"
 #include "params/params.h"
+#include "pubsub_ids.h"
+
+#include <math.h>
 
 #define BLOCK_W 5
 #define SPACING 4
 #define N_BLOCKS 15
 #define WIDTH (N_BLOCKS * (BLOCK_W + SPACING) + SPACING)
 #define HEIGHT 40
+#define BLOCK_HZ 10
 
 static lv_draw_rect_dsc_t rect_dsc;
 static lv_draw_rect_dsc_t rect_active_dsc;
@@ -54,7 +57,7 @@ void cw_tune_init(lv_obj_t *parent)
     lv_obj_add_style(obj, &cw_tune_style, 0);
 
     lv_obj_add_event_cb(obj, update_cb, LV_EVENT_DRAW_MAIN, NULL);
-    lv_msg_subscribe(RADIO_MSG_MODE_CHANGED, mode_changed_cb, NULL);
+    lv_msg_subscribe(MSG_RADIO_MODE_CHANGED, mode_changed_cb, NULL);
     update_visibility();
 }
 
@@ -63,14 +66,14 @@ bool cw_tune_toggle(int16_t diff) {
         params_lock();
         params.cw_tune = !params.cw_tune;
         params_unlock(&params.dirty.cw_tune);
+        lv_msg_send(MSG_PARAM_CHANGED, NULL);
     }
     update_visibility();
     return params.cw_tune;
 }
 
 void cw_tune_set_freq(float hz) {
-
-    int8_t new_id = roundf(hz / 5) + N_BLOCKS / 2;
+    int8_t new_id = N_BLOCKS / 2 - roundf(hz / BLOCK_HZ);
     if (new_id < 0) new_id = 0;
     if (new_id > N_BLOCKS - 1) new_id = N_BLOCKS - 1;
 

@@ -5,9 +5,8 @@
  *
  *  Copyright (c) 2022-2023 Belousov Oleg aka R1CBU
  */
-
-#include "lvgl/lvgl.h"
 #include "mfk.h"
+
 #include "params/params.h"
 #include "spectrum.h"
 #include "waterfall.h"
@@ -21,6 +20,10 @@
 #include "backlight.h"
 #include "voice.h"
 #include "cw_tune_ui.h"
+#include "band_info.h"
+#include "pubsub_ids.h"
+
+#include "lvgl/lvgl.h"
 
 mfk_state_t  mfk_state = MFK_STATE_EDIT;
 mfk_mode_t   mfk_mode = MFK_MIN_LEVEL;
@@ -70,7 +73,7 @@ void mfk_update(int16_t diff, bool voice) {
             i = params_current_mode_spectrum_factor_get();
             if (diff != 0) {
                 i = params_current_mode_spectrum_factor_set(i + diff);
-                spectrum_zoom_factor_set(i);
+                lv_msg_send(MSG_SPECTRUM_ZOOM_CHANGED, &i);
             }
             msg_set_text_fmt("#%3X Spectrum zoom: x%i", color, i);
 
@@ -194,20 +197,7 @@ void mfk_update(int16_t diff, bool voice) {
 
         case MFK_KEY_MODE:
             i = radio_change_key_mode(diff);
-
-            switch (i) {
-                case x6100_key_manual:
-                    str = "Manual";
-                    break;
-
-                case x6100_key_auto_left:
-                    str = "Auto-L";
-                    break;
-
-                case x6100_key_auto_right:
-                    str = "Auto-R";
-                    break;
-            }
+            str = params_key_mode_str_get(i);
             msg_set_text_fmt("#%3X Key mode: %s", color, str);
 
             if (diff) {
@@ -219,16 +209,7 @@ void mfk_update(int16_t diff, bool voice) {
 
         case MFK_IAMBIC_MODE:
             i = radio_change_iambic_mode(diff);
-
-            switch (i) {
-                case x6100_iambic_a:
-                    str = "A";
-                    break;
-
-                case x6100_iambic_b:
-                    str = "B";
-                    break;
-            }
+            str = params_iambic_mode_str_ger(i);
             msg_set_text_fmt("#%3X Iambic mode: %s", color, str);
 
             if (diff) {
@@ -295,20 +276,7 @@ void mfk_update(int16_t diff, bool voice) {
 
         case MFK_CHARGER:
             i = radio_change_charger(diff);
-
-            switch (i) {
-                case RADIO_CHARGER_OFF:
-                    str = "Off";
-                    break;
-
-                case RADIO_CHARGER_ON:
-                    str = "On";
-                    break;
-
-                case RADIO_CHARGER_SHADOW:
-                    str = "Shadow";
-                    break;
-            }
+            str = params_charger_str_get(i);
             msg_set_text_fmt("#%3X Charger: %s", color, str);
 
             if (diff) {
