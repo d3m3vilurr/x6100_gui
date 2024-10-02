@@ -18,6 +18,7 @@
 #include "dsp.h"
 #include "util.h"
 #include "pubsub_ids.h"
+#include "scheduler.h"
 
 #include <stdlib.h>
 #include <math.h>
@@ -26,7 +27,6 @@
 #define PX_BYTES    sizeof(lv_color_t)
 #define DEFAULT_MIN S4
 #define DEFAULT_MAX S9_20
-#define UPDATE_UI_MS    50
 
 static lv_obj_t         *obj;
 static lv_obj_t         *img;
@@ -46,22 +46,22 @@ static lv_img_dsc_t     *frame;
 static lv_color_t       palette[256];
 static uint8_t          delay = 0;
 
-static int64_t         *freq_offsets;
+static int64_t          *freq_offsets;
 static uint16_t         last_row_id;
 static uint8_t          *waterfall_cache;
 
-static int64_t         radio_center_freq = 0;
-static int64_t         wf_center_freq = 0;
+static int64_t          radio_center_freq = 0;
+static int64_t          wf_center_freq = 0;
 
-static lv_timer_t     *update_timer;
+static uint8_t          refresh_period = 1;
+static uint8_t          refresh_counter = 0;
 
 static uint8_t          zoom = 1;
 
+static void refresh_waterfall( void * arg);
 static void draw_middle_line();
 static void redraw_cb(lv_event_t * e);
 static void zoom_changed_cd(void * s, lv_msg_t * m);
-
-static void update_timer_fn(lv_timer_t * t);
 
 
 lv_obj_t * waterfall_init(lv_obj_t * parent, uint64_t cur_freq) {
@@ -80,8 +80,6 @@ lv_obj_t * waterfall_init(lv_obj_t * parent, uint64_t cur_freq) {
     lv_style_set_line_opa(&middle_line_style, LV_OPA_60);
 
     lv_msg_subscribe(MSG_SPECTRUM_ZOOM_CHANGED, zoom_changed_cd, NULL);
-
-    update_timer = lv_timer_create(update_timer_fn, UPDATE_UI_MS, NULL);
 
     return obj;
 }
@@ -121,6 +119,7 @@ void waterfall_data(float *data_buf, uint16_t size, bool tx) {
         uint8_t id = v * 254 + 1;
         memcpy(&waterfall_cache[(last_row_id * size + size - 1 - x) * PX_BYTES], &palette[id], PX_BYTES);
     }
+    scheduler_put(refresh_waterfall, NULL, 0);
 }
 
 static void do_scroll_cb(lv_event_t * event) {
@@ -132,6 +131,7 @@ static void do_scroll_cb(lv_event_t * event) {
     } else {
         wf_center_freq = radio_center_freq;
     }
+    scheduler_put(refresh_waterfall, NULL, 0);
 }
 
 void waterfall_set_height(lv_coord_t h) {
@@ -236,14 +236,14 @@ void waterfall_set_freq(uint64_t freq) {
 }
 
 void waterfall_refresh_reset() {
-    lv_timer_set_period(update_timer, UPDATE_UI_MS);
+    refresh_period = 1;
 }
 
 void waterfall_refresh_period_set(uint8_t k) {
     if (k == 0) {
         return;
     }
-    lv_timer_set_period(update_timer, k * UPDATE_UI_MS);
+    refresh_period = k;
 }
 
 static void redraw_cb(lv_event_t * e) {
@@ -282,10 +282,14 @@ static void redraw_cb(lv_event_t * e) {
     }
 }
 
-static void zoom_changed_cd(void * s, lv_msg_t * m) {
-    zoom = *(uint16_t *) lv_msg_get_payload(m);
+static void refresh_waterfall( void * arg) {
+    refresh_counter++;
+    if (refresh_counter >= refresh_period) {
+        refresh_counter = 0;
+        lv_obj_invalidate(img);
+    }
 }
 
-static void update_timer_fn(lv_timer_t * t) {
-    lv_obj_invalidate(img);
+static void zoom_changed_cd(void * s, lv_msg_t * m) {
+    zoom = *(uint16_t *) lv_msg_get_payload(m);
 }

@@ -36,6 +36,7 @@
 #include "mfk.h"
 #include "vol.h"
 #include "qso_log.h"
+#include "scheduler.h"
 
 #define DISP_BUF_SIZE (800 * 480 * 4)
 
@@ -70,10 +71,6 @@ int main(void) {
 
     lv_disp_set_bg_color(lv_disp_get_default(), lv_color_black());
     lv_disp_set_bg_opa(lv_disp_get_default(), LV_OPA_COVER);
-
-    lv_timer_t *timer = _lv_disp_get_refr_timer(lv_disp_get_default());
-
-    lv_timer_set_period(timer, 15);
 
     keyboard_init();
 
@@ -126,10 +123,15 @@ int main(void) {
     lv_scr_load(main_obj);
 #endif
 
+    int64_t next_loop_time, sleep_time;
     while (1) {
-        lv_timer_handler();
+        next_loop_time = get_time() + lv_timer_handler();
         event_obj_check();
-        usleep(5 * 1000);
+        scheduler_work();
+        sleep_time = next_loop_time - get_time();
+        if (sleep_time > 0) {
+            usleep(sleep_time * 1000);
+        }
     }
     return 0;
 }

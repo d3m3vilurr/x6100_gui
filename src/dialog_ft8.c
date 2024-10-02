@@ -22,6 +22,7 @@
 #include "msg.h"
 #include "util.h"
 #include "recorder.h"
+#include "tx_info.h"
 
 #include "widgets/lv_waterfall.h"
 #include "widgets/lv_finder.h"
@@ -36,6 +37,7 @@
 #include "gfsk.h"
 #include "adif.h"
 #include "qso_log.h"
+#include "scheduler.h"
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -515,7 +517,6 @@ void static waterfall_process(float complex *frame, const size_t size) {
             &waterfall_psd[low_bin]);
 
         lv_waterfall_add_data(waterfall, &waterfall_psd[low_bin], high_bin - low_bin);
-        event_send(waterfall, LV_EVENT_REFRESH, NULL);
 
         waterfall_time = now;
         spgramcf_reset(waterfall_sg);
@@ -548,6 +549,7 @@ void static process(float complex *frame) {
                 complex float   freq = freq_buf[src_bin];
                 float           v = crealf(freq * conjf(freq));
                 float           db = 10.0f * log10f(v);
+                // TODO: add moving average
                 int             scaled = (int16_t) (db * 2.0f + scaled_offset);
 
                 if (scaled < 0) {
@@ -1101,7 +1103,7 @@ static void tx_cq_dis_cb(lv_event_t * e) {
         state = RX_PROCESS;
     }
     cq_enabled = false;
-    tx_enabled = false;
+    tx_msg[0] = '\0';
 }
 
 static void tx_call_off() {
@@ -1272,6 +1274,22 @@ static bool make_answer(const msg_t * msg, int8_t snr, bool rx_odd) {
     return true;
 }
 
+static float get_correction() {
+    static uint8_t msg_id = 0;
+    float correction = 0.0f;
+    float pwr, alc;
+
+    if (tx_info_refresh(&msg_id, &alc, &pwr, NULL)) {
+        float target_pwr = LV_MIN(params.pwr, MAX_PWR);
+        if (alc > 0.5f) {
+            correction = log10f(log10f(10.0f - alc)) * 10.0f;
+        } else if (target_pwr - pwr > 0.5f) {
+            // TODO: check battery level
+            correction = log10f(target_pwr / pwr) * 5.0f;
+        }
+    }
+    return correction;
+}
 
 static void tx_worker() {
     uint8_t packed[FTX_LDPC_K_BYTES];
@@ -1307,21 +1325,37 @@ static void tx_worker() {
     radio_set_freq(radio_freq + params.ft8_tx_freq.x - signal_freq);
     radio_set_modem(true);
 
-    float gain_scale = -8.2f + params.ft8_output_gain_offset + log10f(LV_MIN(params.pwr, MAX_PWR)) * 5;
+    float target_pwr = LV_MIN(params.pwr, MAX_PWR);
+    float base_gain_scale = -8.2f + log10f(target_pwr) * 5;
+    float gain_scale = base_gain_scale + params.ft8_output_gain_offset.x;
+    float prev_gain_scale = gain_scale;
+    size_t counter = 0;
 
     while (true) {
+        if (counter > 30) {
+            gain_scale += get_correction() * 0.4f;
+            if (gain_scale > 0.0) gain_scale = 0.0f;
+            else if (gain_scale < -40.0f) gain_scale = -40.0f;
+        }
         if (n_samples <= 0 || state != TX_PROCESS) {
             state = RX_PROCESS;
             break;
         }
         part = LV_MIN(1024 * 2, n_samples);
-        audio_gain_db(ptr, part, gain_scale, ptr);
+        if (gain_scale == prev_gain_scale) {
+            audio_gain_db(ptr, part, gain_scale, ptr);
+        } else {
+            // Smooth change gain
+            audio_gain_db_transition(ptr, part, prev_gain_scale, gain_scale, ptr);
+            prev_gain_scale = gain_scale;
+        }
         audio_play(ptr, part);
 
         n_samples -= part;
         ptr += part;
+        counter++;
     }
-
+    params_float_set(&params.ft8_output_gain_offset, gain_scale - base_gain_scale);
     audio_play_wait();
     radio_set_modem(false);
     // Restore freq
@@ -1365,6 +1399,7 @@ static msg_t parse_rx_msg(const char * str) {
     /* Analysis */
 
     if (strcmp(call_to, "CQ") == 0) {
+        // TODO: add POTA support
         if (strlen(call_de) == 2) {
             call_de = extra;
             extra = strtok(NULL, " ");
@@ -1435,7 +1470,7 @@ static void add_rx_text(int16_t snr, const char * text, bool odd) {
 
     if (str_equal(msg.call_to, params.callsign.x)) {
         cell_type = CELL_RX_TO_ME;
-        if (!active_qso()) {
+        if (!active_qso() && ((msg.type == MSG_TYPE_GRID) || (msg.type == MSG_TYPE_REPORT))) {
             // Use first decoded answer
             strncpy(qso_item.remote_callsign, msg.call_from, sizeof(qso_item.remote_callsign) - 1);
         }
@@ -1561,17 +1596,22 @@ static void rx_worker(bool new_slot, bool odd) {
     }
 }
 
+static void update_call_btn(void * arg) {
+    if (tx_enabled) {
+        buttons_load(2, &button_tx_call_dis);
+    } else {
+        buttons_load(2, &button_tx_call_en);
+    }
+}
+
+
 static void generate_tx_msg() {
     if (qso_item.last_rx_msg != NULL) {
         if (!make_answer(qso_item.last_rx_msg, qso_item.last_snr, qso_item.rx_odd)) {
             tx_msg[0] = 0;
         } else {
             cq_enabled = false;
-            if (tx_enabled) {
-                buttons_load(2, &button_tx_call_dis);
-            } else {
-                buttons_load(2, &button_tx_call_en);
-            }
+            scheduler_put(update_call_btn, NULL, 0);
         }
         switch (qso_item.last_rx_msg->type) {
             case MSG_TYPE_RR73:

@@ -16,6 +16,7 @@
 #include "params/params.h"
 #include "util.h"
 #include "dialog.h"
+#include "scheduler.h"
 
 #define NUM_PWR_ITEMS   6
 #define NUM_VSWR_ITEMS  5
@@ -27,9 +28,11 @@ static const float      max_pwr = 10.0f;
 static const float      min_swr = 1.0f;
 static const float      max_swr = 5.0f;
 
-static float            pwr = 10.0f;
-static float            vswr = 5.0f;
+static float            pwr = 0.0f;
+static float            vswr = 0.0f;
 static float            alc;
+
+static uint8_t          msg_id;
 
 static uint64_t         prev_ui_update = 0;
 
@@ -67,15 +70,14 @@ static void tx_info_draw_cb(lv_event_t * e) {
     lv_area_t           area;
     lv_point_t          label_size;
     uint32_t            count;
+    uint8_t             slices_total;
+    uint8_t             slice_spacing = 2;
 
     lv_coord_t x1 = obj->coords.x1 + 7;
     lv_coord_t y1 = obj->coords.y1 + 17;
 
-    lv_coord_t w = lv_obj_get_width(obj);
+    lv_coord_t w = lv_obj_get_width(obj) - 60;
     lv_coord_t h = lv_obj_get_height(obj) - 1;
-
-    uint8_t     slice = 10;
-    lv_coord_t  len = 300;
 
     /* PWR rects */
 
@@ -83,17 +85,22 @@ static void tx_info_draw_cb(lv_event_t * e) {
 
     rect_dsc.bg_opa = LV_OPA_80;
 
-    count = len * (pwr - min_pwr) / (max_pwr - min_pwr) / slice;
+    float slice_pwr_step = 0.25f;
+    slices_total = (max_pwr - min_pwr) / slice_pwr_step;
+    uint8_t     slice_pwr_width = w / slices_total;
 
-    area.y1 = y1 - slice / 2;
+    count = (pwr - min_pwr + slice_pwr_step) / slice_pwr_step;
+    count = LV_MIN(count, slices_total);
+
+    area.y1 = y1 - 5;
     area.y2 = y1 + 32;
 
     rect_dsc.bg_color = lv_color_hex(0x00BB00);
 
     for (uint16_t i = 0; i < count; i++) {
 
-        area.x1 = x1 + 30 + i * slice;
-        area.x2 = area.x1 + slice - 3;
+        area.x1 = x1 + 30 + i * slice_pwr_width - slice_pwr_width / 2 + slice_spacing / 2;
+        area.x2 = area.x1 + slice_pwr_width - slice_spacing;
 
         lv_draw_rect(draw_ctx, &rect_dsc, &area);
     }
@@ -104,26 +111,31 @@ static void tx_info_draw_cb(lv_event_t * e) {
 
     rect_dsc.bg_opa = LV_OPA_80;
 
-    count = len * (vswr - min_swr) / (max_swr - min_swr) / slice;
+    float slice_swr_step = 0.1f;
+    slices_total = (max_swr - min_swr) / slice_swr_step;
+    uint8_t     slice_swr_width = w / slices_total;
 
-    area.y1 = y1 - slice / 2 + 54;
+    count = (vswr - min_swr + slice_swr_step) / slice_swr_step;
+
+    area.y1 = y1 - 5 + 54;
     area.y2 = y1 + 32 + 54;
 
-    for (uint16_t i = 0; i < count; i++) {
-        float s = i * (max_swr - min_swr) / (len / slice) + min_swr;
+    float swr_val = vswr_items[0].val;
 
-        if (s <= 2.0f) {
+    for (uint16_t i = 0; i < count; i++) {
+        if (swr_val <= 2.0f) {
             rect_dsc.bg_color = lv_color_hex(0x00BB00);
-        } else if (s <= 3.0f) {
+        } else if (swr_val <= 3.0f) {
             rect_dsc.bg_color = lv_color_hex(0xAAAA00);
         } else {
             rect_dsc.bg_color = lv_color_hex(0xAA0000);
         }
 
-        area.x1 = x1 + 30 + i * slice;
-        area.x2 = area.x1 + slice - 3;
+        area.x1 = x1 + 30 + i * slice_swr_width - slice_swr_width / 2 + slice_spacing / 2;
+        area.x2 = area.x1 + slice_swr_width - slice_spacing;
 
         lv_draw_rect(draw_ctx, &rect_dsc, &area);
+        swr_val += slice_swr_step;
     }
 
     /* PWR Labels */
@@ -145,7 +157,7 @@ static void tx_info_draw_cb(lv_event_t * e) {
 
         lv_txt_get_size(&label_size, label, label_dsc.font, 0, 0, LV_COORD_MAX, 0);
 
-        area.x1 = x1 + 30 + len * (val - min_pwr) / (max_pwr - min_pwr) - (label_size.x / 2);
+        area.x1 = x1 + 30 + slice_pwr_width * ((val  - min_pwr) / slice_pwr_step) - label_size.x / 2;
         area.x2 = area.x1 + label_size.x;
 
         lv_draw_label(draw_ctx, &label_dsc, &area, label, NULL);
@@ -165,7 +177,7 @@ static void tx_info_draw_cb(lv_event_t * e) {
 
         lv_txt_get_size(&label_size, label, label_dsc.font, 0, 0, LV_COORD_MAX, 0);
 
-        area.x1 = x1 + 30 + len * (val - min_swr) / (max_swr - min_swr) - (label_size.x / 2);
+        area.x1 = x1 + 30 + slice_swr_width * ((val  - min_swr) / slice_swr_step) - label_size.x / 2;
         area.x2 = area.x1 + label_size.x;
 
         lv_draw_label(draw_ctx, &label_dsc, &area, label, NULL);
@@ -173,14 +185,10 @@ static void tx_info_draw_cb(lv_event_t * e) {
 
 }
 
-static void update_alc_label_cb(lv_event_t * e) {
-    lv_label_set_text_fmt(alc_label, "ALC: %1.1f", alc);
-}
-
 static void tx_cb(lv_event_t * e) {
-    pwr = 0;
-    vswr = 0;
-    alc = 0;
+    pwr = 0.0f;
+    vswr = 0.0f;
+    alc = 0.0f;
 
     lv_obj_clear_flag(obj, LV_OBJ_FLAG_HIDDEN);
     lv_obj_move_foreground(obj);
@@ -190,17 +198,17 @@ static void rx_cb(lv_event_t * e) {
     lv_obj_add_flag(obj, LV_OBJ_FLAG_HIDDEN);
 }
 
-static void update_timer(lv_timer_t * timer)
+static void update_tx_info(void * arg)
 {
     if (lv_obj_has_flag(obj, LV_OBJ_FLAG_HIDDEN)) {
         return;
     }
-    lv_event_send(obj, LV_EVENT_REFRESH, NULL);
+    lv_obj_invalidate(obj);
     if (params.mag_alc.x) {
         msg_tiny_set_text_fmt("ALC: %.1f", alc);
     }
     if (dialog_is_run() || !params.mag_alc.x) {
-        lv_event_send(alc_label, EVENT_MSG_UPDATE, NULL);
+        lv_label_set_text_fmt(alc_label, "ALC: %1.1f", alc);
     }
 }
 
@@ -233,9 +241,7 @@ lv_obj_t * tx_info_init(lv_obj_t *parent) {
     lv_obj_align(alc_label, LV_ALIGN_BOTTOM_RIGHT, -10, 13);
     lv_obj_set_style_text_color(alc_label, lv_color_white(), 0);
     lv_label_set_text(alc_label, "");
-    lv_obj_add_event_cb(alc_label, update_alc_label_cb, EVENT_MSG_UPDATE, NULL);
 
-    lv_timer_t * timer = lv_timer_create(update_timer, UPDATE_UI_MS,  NULL);
     return obj;
 }
 
@@ -258,4 +264,17 @@ void tx_info_update(float p, float s, float a) {
             lpf(&alc, a, beta, 0.0f);
             lpf(&vswr, s, beta, 0.0f);
     }
+    msg_id++;
+    scheduler_put(update_tx_info, NULL, 0);
+}
+
+bool tx_info_refresh(uint8_t * prev_msg_id, float * alc_p, float * pwr_p, float * vswr_p) {
+    if (*prev_msg_id == msg_id) {
+        return false;
+    }
+    if (alc_p) *alc_p = alc;
+    if (pwr_p) *pwr_p = pwr;
+    if (vswr_p) *vswr_p = vswr;
+    *prev_msg_id = msg_id;
+    return true;
 }
