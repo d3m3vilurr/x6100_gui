@@ -115,11 +115,12 @@ params_t params = {
     .swrscan_span           = 200000,
 
     .ft8_show_all           = true,
-    .ft8_protocol           = PROTO_FT8,
+    .ft8_protocol           = FTX_PROTOCOL_FT8,
     .ft8_band               = 5,
     .ft8_tx_freq            = { .x = 1325,      .name = "ft8_tx_freq" },
     .ft8_auto               = { .x = true,      .name = "ft8_auto" },
     .ft8_output_gain_offset = { .x = 0.0f,      .name = "ft8_output_gain_offset" },
+    .ft8_cq_modifier        = { .x = "",        .name = "ft8_cq_modifier"},
 
     .long_gen               = ACTION_SCREENSHOT,
     .long_app               = ACTION_APP_RECORDER,
@@ -133,8 +134,8 @@ params_t params = {
     .long_f1                = ACTION_STEP_DOWN,
     .long_f2                = ACTION_NONE,
 
-    .play_gain_db           = 0,
-    .rec_gain_db            = 0,
+    .play_gain_db_f         = { .x = 0.0f, .name = "play_gain_db_f"},
+    .rec_gain_db_f          = { .x = 0.0f, .name = "rec_gain_db_f"},
 
     .voice_mode             = { .x = VOICE_LCD,                                 .name = "voice_mode" },
     .voice_lang             = { .x = 0,   .min = 0,  .max = (VOICES_NUM - 1),   .name = "voice_lang" },
@@ -144,6 +145,8 @@ params_t params = {
 
     .qth                    = { .x = "",  .max_len = 6, .name = "qth" },
     .callsign               = { .x = "",  .max_len = 12, .name = "callsign" },
+
+    .wifi_enabled           = { .x = false, .name="wifi_enabled" },
 };
 
 transverter_t params_transverter[TRANSVERTER_NUM] = {
@@ -373,11 +376,10 @@ static bool params_load() {
             params.long_f1 = i;
         } else if (strcmp(name, "long_f2") == 0) {
             params.long_f2 = i;
-        } else if (strcmp(name, "play_gain_db") == 0) {
-            params.play_gain_db = i;
-        } else if (strcmp(name, "rec_gain_db") == 0) {
-            params.rec_gain_db = i;
         }
+
+        if (params_load_float(&params.play_gain_db_f, name, f)) continue;
+        if (params_load_float(&params.rec_gain_db_f, name, f)) continue;
 
         if (params_load_bool(&params.mag_freq, name, i)) continue;
         if (params_load_bool(&params.mag_info, name, i)) continue;
@@ -392,6 +394,7 @@ static bool params_load() {
         if (params_load_bool(&params.spmode, name, i)) continue;
         if (params_load_bool(&params.ft8_auto, name, i)) continue;
         if (params_load_float(&params.ft8_output_gain_offset, name, f)) continue;
+        if (params_load_str(&params.ft8_cq_modifier, name, t)) continue;
 
         if (params_load_uint8(&params.voice_mode, name, i)) continue;
         if (params_load_uint8(&params.voice_lang, name, i)) continue;
@@ -408,6 +411,7 @@ static bool params_load() {
         }
 
         if (params_load_str(&params.callsign, name, t)) continue;
+        if (params_load_bool(&params.wifi_enabled, name, i)) continue;
     }
 
     sqlite3_finalize(stmt);
@@ -544,8 +548,8 @@ static void params_save() {
     if (params.dirty.long_f1)               params_write_int("long_f1", params.long_f1, &params.dirty.long_f1);
     if (params.dirty.long_f2)               params_write_int("long_f2", params.long_f2, &params.dirty.long_f2);
 
-    if (params.dirty.play_gain_db)          params_write_int("play_gain_db", params.play_gain_db, &params.dirty.play_gain_db);
-    if (params.dirty.rec_gain_db)           params_write_int("rec_gain_db", params.rec_gain_db, &params.dirty.rec_gain_db);
+    params_save_float(&params.play_gain_db_f);
+    params_save_float(&params.rec_gain_db_f);
 
     params_save_uint8(&params.voice_mode);
     params_save_uint8(&params.voice_lang);
@@ -569,9 +573,11 @@ static void params_save() {
     params_save_bool(&params.spmode);
     params_save_bool(&params.ft8_auto);
     params_save_float(&params.ft8_output_gain_offset);
+    params_save_str(&params.ft8_cq_modifier);
 
     params_save_str(&params.qth);
     params_save_str(&params.callsign);
+    params_save_bool(&params.wifi_enabled);
 
     sql_query_exec("COMMIT");
 }

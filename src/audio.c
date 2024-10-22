@@ -15,6 +15,8 @@
 #include <math.h>
 
 #include <pulse/pulseaudio.h>
+#include <alsa/asoundlib.h>
+#include <alsa/mixer.h>
 
 #include "lvgl/lvgl.h"
 #include "audio.h"
@@ -57,7 +59,6 @@ static void mixer_setup() {
     res = system("amixer sset 'Headphone',0 58,58");
     // Play level from app to radio (for FT8)
     res = system("amixer sset 'AIF1 DA0',0 160,160");
-    res = system("amixer sset 'DAC',0 147,147");
 
     // capture audio from radio
     res = system("amixer sset 'Mic1',0 0,0 cap");
@@ -65,11 +66,13 @@ static void mixer_setup() {
     res = system("amixer sset 'Mic1 Boost',0 1");
     // disable capturing from mixer
     res = system("amixer sset 'Mixer',0 nocap");
-    res = system("amixer sset 'ADC',0 160,160");
     res = system("amixer sset 'ADC Gain',0 3");
     res = system("amixer sset 'AIF1 AD0',0 160,160");
     res = system("amixer sset 'AIF1 AD0 Stereo',0 'Mix Mono'");
     res = system("amixer sset 'AIF1 Data Digital ADC',0 cap");
+
+    audio_set_rec_vol(0.0f);
+    audio_set_play_vol(0.0f);
 }
 
 void audio_init() {
@@ -177,7 +180,7 @@ void audio_play_wait() {
 }
 
 void audio_gain_db(int16_t *buf, size_t samples, float gain, int16_t *out) {
-    float scale = exp10f(gain / 10.0f);
+    float scale = exp10f(gain / 20.0f);
 
     for (uint16_t i = 0; i < samples; i++) {
         int32_t x = buf[i] * scale;
@@ -195,8 +198,8 @@ void audio_gain_db(int16_t *buf, size_t samples, float gain, int16_t *out) {
 }
 
 void audio_gain_db_transition(int16_t *buf, size_t samples, float gain1, float gain2, int16_t *out) {
-    float scale1 = exp10f(gain1 / 10.0f);
-    float scale2 = exp10f(gain2 / 10.0f);
+    float scale1 = exp10f(gain1 / 20.0f);
+    float scale2 = exp10f(gain2 / 20.0f);
     float scale;
     for (uint16_t i = 0; i < samples; i++) {
         scale = scale1 + i * (scale2 - scale1) / samples;
@@ -226,6 +229,52 @@ void audio_play_en(bool on) {
     }
 }
 
+float audio_set_play_vol(float db) {
+    snd_mixer_t *handle;
+    snd_mixer_selem_id_t *sid;
+    const char *card = "default";
+    const char *selem_name = "AIF1 DA0";
+
+    snd_mixer_open(&handle, 0);
+    snd_mixer_attach(handle, card);
+    snd_mixer_selem_register(handle, NULL, NULL);
+    snd_mixer_load(handle);
+
+    snd_mixer_selem_id_alloca(&sid);
+    snd_mixer_selem_id_set_index(sid, 0);
+    snd_mixer_selem_id_set_name(sid, selem_name);
+    snd_mixer_elem_t* elem = snd_mixer_find_selem(handle, sid);
+
+    snd_mixer_selem_set_playback_dB_all(elem, (long)(db * 100.0f), 0);
+    long db_long;
+    snd_mixer_selem_get_playback_dB(elem, SND_MIXER_SCHN_MONO, &db_long);
+    snd_mixer_close(handle);
+    return (float)db_long / 100.0f;
+}
+
+float audio_set_rec_vol(float db) {
+    snd_mixer_t *handle;
+    snd_mixer_selem_id_t *sid;
+    const char *card = "default";
+    const char *selem_name = "ADC";
+
+    snd_mixer_open(&handle, 0);
+    snd_mixer_attach(handle, card);
+    snd_mixer_selem_register(handle, NULL, NULL);
+    snd_mixer_load(handle);
+
+    snd_mixer_selem_id_alloca(&sid);
+    snd_mixer_selem_id_set_index(sid, 0);
+    snd_mixer_selem_id_set_name(sid, selem_name);
+    snd_mixer_elem_t* elem = snd_mixer_find_selem(handle, sid);
+
+    snd_mixer_selem_set_capture_dB_all(elem, (long)(db * 100.0f), 0);
+    long db_long;
+    snd_mixer_selem_get_capture_dB(elem, SND_MIXER_SCHN_MONO, &db_long);
+    snd_mixer_close(handle);
+    return (float) db_long / 100.0f;
+}
+
 static void monitor_cb(pa_stream *stream, size_t length, void *udata) {
     int16_t *buf = NULL;
 
@@ -238,7 +287,7 @@ static void monitor_cb(pa_stream *stream, size_t length, void *udata) {
             max_val = cur_val;
         }
     }
-    float max_db = 20.0f * log10f((float) max_val / (1UL << 15));
+    float max_db = 20.0f * log10f((float) max_val / ((1UL << 15) - 1));
     dialog_recorder_set_peak(max_db);
     pa_stream_drop(stream);
 }

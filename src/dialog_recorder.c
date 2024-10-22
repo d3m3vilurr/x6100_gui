@@ -151,10 +151,6 @@ static void play_item() {
         int res = sf_read_short(file, samples_buf, BUF_SIZE);
 
         if (res > 0) {
-            if (params.play_gain_db != 0) {
-                audio_gain_db(samples_buf, res, params.play_gain_db, samples_buf);
-            }
-
             audio_play(samples_buf, res);
         } else {
             play_state = false;
@@ -179,15 +175,16 @@ static void * play_thread(void *arg) {
     }
 }
 
-static void textarea_window_close_cb() {
+static bool textarea_window_close_cb() {
     lv_group_add_obj(keyboard_group, table);
     lv_group_set_editing(keyboard_group, true);
 
     free(prev_filename);
     prev_filename = NULL;
+    return true;
 }
 
-static void textarea_window_edit_ok_cb() {
+static bool textarea_window_edit_ok_cb() {
     const char *new_filename = textarea_window_get();
 
     if (strcmp(prev_filename, new_filename) != 0) {
@@ -205,6 +202,7 @@ static void textarea_window_edit_ok_cb() {
         free(prev_filename);
         prev_filename = NULL;
     }
+    return true;
 }
 
 static void tx_cb(lv_event_t * e) {

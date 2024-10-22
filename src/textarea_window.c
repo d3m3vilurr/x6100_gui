@@ -13,6 +13,7 @@
 #include "styles.h"
 
 static lv_obj_t             *window = NULL;
+static lv_obj_t             *label = NULL;
 static lv_obj_t             *text = NULL;
 static lv_obj_t             *keyboard = NULL;
 
@@ -21,11 +22,11 @@ static textarea_window_cb_t cancel_cb = NULL;
 
 static void ok() {
     if (ok_cb) {
-        ok_cb();
-        ok_cb = NULL;
+        if(ok_cb()) {
+            ok_cb = NULL;
+            textarea_window_close();
+        }
     }
-
-    textarea_window_close();
  }
 
 static void cancel() {
@@ -45,11 +46,11 @@ static void text_cb(lv_event_t * e) {
         case LV_KEY_ENTER:
             ok();
             break;
-            
+
         case LV_KEY_ESC:
             cancel();
             break;
-            
+
         case KEY_VOL_LEFT_EDIT:
         case KEY_VOL_LEFT_SELECT:
             radio_change_vol(-1);
@@ -65,11 +66,11 @@ static void text_cb(lv_event_t * e) {
 
 static void keyboard_cb(lv_event_t * e) {
     lv_event_code_t code = lv_event_get_code(e);
-    uint32_t        key = *((uint32_t *)lv_event_get_param(e));
-    
+    uint32_t        *key = ((uint32_t *)lv_event_get_param(e));
+
     switch (code) {
         case LV_EVENT_KEY:
-            switch (key) {
+            switch (*key) {
                 case KEY_VOL_LEFT_EDIT:
                 case KEY_VOL_LEFT_SELECT:
                     radio_change_vol(-1);
@@ -104,28 +105,44 @@ lv_obj_t * textarea_window_open(textarea_window_cb_t ok, textarea_window_cb_t ca
     lv_obj_clear_flag(window, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_y(window, 80);
 
-    text = lv_textarea_create(window);
+    lv_obj_t * obj = lv_obj_create(window);
+    lv_obj_set_layout(obj, LV_LAYOUT_FLEX);
+    lv_obj_remove_style(obj, NULL, LV_STATE_ANY | LV_PART_MAIN);
+    lv_obj_set_height(obj, 35);
+    lv_obj_set_width(obj, 560);
+    lv_obj_center(obj);
+    lv_obj_set_flex_flow(obj, LV_FLEX_FLOW_ROW);
+
+    lv_obj_t * item_wrapper;
+    item_wrapper = lv_obj_create(obj);
+    lv_obj_remove_style(item_wrapper, NULL, LV_STATE_ANY | LV_PART_MAIN);
+    lv_obj_set_size(item_wrapper, LV_SIZE_CONTENT, LV_PCT(100));
+
+    label = lv_label_create(item_wrapper);
+    lv_obj_set_style_text_font(label, &sony_36, 0);
+    lv_label_set_text(label, "");
+    lv_obj_align_to(label, item_wrapper, LV_ALIGN_LEFT_MID, 0, 0);
+
+    text = lv_textarea_create(obj);
 
     lv_obj_remove_style(text, NULL, LV_STATE_ANY | LV_PART_MAIN);
+    lv_obj_set_size(text, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
 
     lv_obj_set_style_text_color(text, lv_color_white(), 0);
     lv_obj_set_style_bg_color(text, lv_color_white(), LV_PART_CURSOR);
-    lv_obj_set_style_bg_opa(text, 255, LV_PART_CURSOR);
-    
+    lv_obj_set_style_bg_opa(text, LV_OPA_80, LV_PART_CURSOR);
+
     lv_textarea_set_one_line(text, true);
     lv_textarea_set_max_length(text, 40);
-    
+
     lv_obj_clear_flag(text, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_style_text_font(text, &sony_44, 0);
+    lv_obj_set_flex_grow(text, 1);
 
     if (ok || cancel) {
         lv_obj_add_event_cb(text, text_cb, LV_EVENT_KEY, NULL);
     }
 
-    lv_obj_set_height(text, 35);
-    lv_obj_set_width(text, 529);
-    lv_obj_center(text);
-    
     if (!keyboard_ready()) {
         keyboard = lv_keyboard_create(lv_scr_act());
 
@@ -144,12 +161,18 @@ lv_obj_t * textarea_window_open(textarea_window_cb_t ok, textarea_window_cb_t ca
     }
 
     lv_group_add_obj(keyboard_group, text);
-    
+
     return window;
 }
 
+lv_obj_t *textarea_window_open_w_label(textarea_window_cb_t ok_cb, textarea_window_cb_t cancel_cb, const char *text) {
+    lv_obj_t * obj = textarea_window_open(ok_cb, cancel_cb);
+    lv_label_set_text(label, text);
+    return obj;
+}
+
 void textarea_window_close() {
-    if (keyboard) {            
+    if (keyboard) {
         lv_obj_del(keyboard);
         keyboard = NULL;
     }

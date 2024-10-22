@@ -181,10 +181,6 @@ static void play_item() {
         int res = sf_read_short(file, samples_buf, BUF_SIZE);
 
         if (res > 0) {
-            if (params.play_gain_db != 0) {
-                audio_gain_db(samples_buf, res, params.play_gain_db, samples_buf);
-            }
-
             audio_play(samples_buf, res);
         } else {
             state = MSG_VOICE_OFF;
@@ -262,15 +258,16 @@ static void * beacon_thread(void *arg) {
     return NULL;
 }
 
-static void textarea_window_close_cb() {
+static bool textarea_window_close_cb() {
     lv_group_add_obj(keyboard_group, table);
     lv_group_set_editing(keyboard_group, true);
 
     free(prev_filename);
     prev_filename = NULL;
+    return true;
 }
 
-static void textarea_window_edit_ok_cb() {
+static bool textarea_window_edit_ok_cb() {
     const char *new_filename = textarea_window_get();
 
     if (strcmp(prev_filename, new_filename) != 0) {
@@ -288,6 +285,7 @@ static void textarea_window_edit_ok_cb() {
         free(prev_filename);
         prev_filename = NULL;
     }
+    return true;
 }
 
 static void tx_cb(lv_event_t * e) {
@@ -507,17 +505,10 @@ msg_voice_state_t dialog_msg_voice_get_state() {
 }
 
 void dialog_msg_voice_put_audio_samples(size_t nsamples, int16_t *samples) {
-    int16_t *out_samples;
-    if (params.rec_gain_db != 0) {
-        out_samples = malloc(nsamples * sizeof(*out_samples));
-        audio_gain_db(samples, nsamples, params.rec_gain_db, out_samples);
-    } else {
-        out_samples = samples;
-    }
     int16_t peak = 0;
 
     for (uint16_t i = 0; i < nsamples; i++) {
-        int16_t x = abs(out_samples[i]);
+        int16_t x = abs(samples[i]);
 
         if (x > peak) {
             peak = x;
@@ -526,8 +517,5 @@ void dialog_msg_voice_put_audio_samples(size_t nsamples, int16_t *samples) {
 
     peak = S1 + (peak / 32768.0) * (S9_40 - S1);
     meter_update(peak, 0.25f);
-    sf_write_short(file, out_samples, nsamples);
-    if (params.rec_gain_db != 0) {
-        free(out_samples);
-    }
+    sf_write_short(file, samples, nsamples);
 }

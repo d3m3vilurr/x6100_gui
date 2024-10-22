@@ -12,7 +12,7 @@
 #include <stdbool.h>
 
 #include <aether_radio/x6100_control/control.h>
-#include "../ft8/constants.h"
+#include <ft8lib/constants.h>
 #include "../bands.h"
 #include "../radio.h"
 #include "../clock.h"
@@ -191,6 +191,7 @@ typedef struct {
     uint8_t             ft8_band;
     params_uint16_t     ft8_tx_freq;
     params_bool_t       ft8_auto;
+    params_str_t        ft8_cq_modifier;
 
     // FT8 gain offset for different radios/bands/modes
     params_float_t      ft8_output_gain_offset;
@@ -213,8 +214,8 @@ typedef struct {
 
     /* Audio play/rec */
 
-    int8_t              play_gain_db;
-    int8_t              rec_gain_db;
+    params_float_t      play_gain_db_f;
+    params_float_t      rec_gain_db_f;
 
     /* Voice */
 
@@ -226,6 +227,10 @@ typedef struct {
 
     params_str_t        qth;
     params_str_t        callsign;
+
+    /* WiFi / BT */
+
+    params_bool_t       wifi_enabled;
 
     /* durty flags */
 
@@ -324,8 +329,6 @@ typedef struct {
         bool    long_f1;
         bool    long_f2;
 
-        bool    play_gain_db;
-        bool    rec_gain_db;
     } dirty;
 } params_t;
 

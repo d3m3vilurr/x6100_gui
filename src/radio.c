@@ -84,7 +84,7 @@ bool radio_tick() {
             delay = 0;
             clock_update_power(pack->vext * 0.1f, pack->vbat*0.1f, pack->batcap, pack->flag.charging);
         }
-        dsp_samples(pack->samples, RADIO_SAMPLES, pack->flag.tx);
+        dsp_samples(((void *)pack) + offsetof(x6100_flow_t, samples), RADIO_SAMPLES, pack->flag.tx);
 
         switch (state) {
             case RADIO_RX:
@@ -259,7 +259,6 @@ void radio_init(radio_state_change_t tx_cb, radio_state_change_t rx_cb, radio_st
     if (!x6100_flow_init())
         return;
 
-    x6100_gpio_set(x6100_pin_wifi, 1);          /* WiFi off */
     x6100_gpio_set(x6100_pin_morse_key, 1);     /* Morse key off */
 
     notify_tx = tx_cb;
@@ -459,6 +458,8 @@ bool radio_change_pre() {
     pre = params_band_cur_pre_set(!pre);
 
     WITH_RADIO_LOCK(x6100_control_vfo_pre_set(cur_vfo, pre));
+    x6100_att_t att = params_band_cur_att_get();
+    WITH_RADIO_LOCK(x6100_control_vfo_att_set(cur_vfo, att));
 
     voice_say_text_fmt("Preamplifier %s", pre ? "On" : "Off");
     return pre;
@@ -471,7 +472,8 @@ bool radio_change_att() {
     att = params_band_cur_att_set(!att);
 
     WITH_RADIO_LOCK(x6100_control_vfo_att_set(cur_vfo, att));
-
+    x6100_pre_t pre = params_band_cur_pre_get();
+    WITH_RADIO_LOCK(x6100_control_vfo_pre_set(cur_vfo, pre));
     voice_say_text_fmt("Attenuator %s", att ? "On" : "Off");
     return att;
 }
