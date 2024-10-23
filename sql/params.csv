@@ -4,6 +4,7 @@ callsign	DS1UFX
 cw_decoder_snr_2	40
 cw_tune	1
 iambic_mode	1
+hmic	40
 key_mode	2
 key_speed	16
 moni	10
