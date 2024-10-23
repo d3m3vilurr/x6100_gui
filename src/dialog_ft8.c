@@ -73,7 +73,7 @@
 #define FT4_10M_ID      (209 - MEM_FT4_ID)
 #define FT4_6M_ID       (210 - MEM_FT4_ID)
 
-#define DECIM           6
+#define DECIM           4
 #define SAMPLE_RATE     (AUDIO_CAPTURE_RATE / DECIM)
 
 #define WIDTH           771
