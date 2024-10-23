@@ -2,7 +2,8 @@
 
 source ./conf.sh
 
-PATH=../${BUILDROOT}/host/bin:${PATH}
+export PATH=../${BUILDROOT}/host/bin:${PATH}
+export LD_LIBRARY_PATH=../${BUILDROOT}/host/lib
 
 mkdir build
 
@@ -27,6 +28,7 @@ cmake \
     -DLV_CONF_BUILD_DISABLE_EXAMPLES=ON \
     -DLV_CONF_BUILD_DISABLE_DEMOS=ON
 
-make -j$((`nproc`))
+#make -j$((`nproc`))
+bash
 
 cd -
