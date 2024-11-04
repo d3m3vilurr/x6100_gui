@@ -19,7 +19,7 @@
 #include "../mfk.h"
 #include "../vol.h"
 #include "../dialog_msg_cw.h"
-#include "../qth.h"
+#include "../qth/qth.h"
 
 params_t params = {
     .vol_modes              = (1 << VOL_VOL) | (1 << VOL_RFG) | (1 << VOL_FILTER_LOW) | (1 << VOL_FILTER_HIGH) | (1 << VOL_PWR) | (1 << VOL_HMIC),
@@ -147,6 +147,8 @@ params_t params = {
     .callsign               = { .x = "",  .max_len = 12, .name = "callsign" },
 
     .wifi_enabled           = { .x = false, .name="wifi_enabled" },
+
+    .theme                  = { .x = THEME_SIMPLE, .name="theme"},
 };
 
 transverter_t params_transverter[TRANSVERTER_NUM] = {
@@ -405,13 +407,11 @@ static bool params_load() {
 
         if (params_load_uint16(&params.ft8_tx_freq, name, i)) continue;
 
-        if (params_load_str(&params.qth, name, t)) {
-            qth_update(t);
-            continue;
-        }
+        if (params_load_str(&params.qth, name, t)) continue;
 
         if (params_load_str(&params.callsign, name, t)) continue;
         if (params_load_bool(&params.wifi_enabled, name, i)) continue;
+        if (params_load_uint8(&params.theme, name, i)) continue;
     }
 
     sqlite3_finalize(stmt);
@@ -578,6 +578,7 @@ static void params_save() {
     params_save_str(&params.qth);
     params_save_str(&params.callsign);
     params_save_bool(&params.wifi_enabled);
+    params_save_uint8(&params.theme);
 
     sql_query_exec("COMMIT");
 }
