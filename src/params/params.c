@@ -116,7 +116,6 @@ params_t params = {
 
     .ft8_show_all           = true,
     .ft8_protocol           = FTX_PROTOCOL_FT8,
-    .ft8_band               = 5,
     .ft8_tx_freq            = { .x = 1325,      .name = "ft8_tx_freq" },
     .ft8_auto               = { .x = true,      .name = "ft8_auto" },
     .ft8_output_gain_offset = { .x = 0.0f,      .name = "ft8_output_gain_offset" },
@@ -149,6 +148,8 @@ params_t params = {
     .wifi_enabled           = { .x = false, .name="wifi_enabled" },
 
     .theme                  = { .x = THEME_SIMPLE, .name="theme"},
+
+    .atu                    = { .x = false, .name="atu" },
 };
 
 transverter_t params_transverter[TRANSVERTER_NUM] = {
@@ -234,8 +235,6 @@ static bool params_load() {
             params.vol = i;
         } else if (strcmp(name, "sql") == 0) {
             params.sql = i;
-        } else if (strcmp(name, "atu") == 0) {
-            params.atu = i;
         } else if (strcmp(name, "pwr") == 0) {
             params.pwr = i * 0.1f;
         } else if (strcmp(name, "spectrum_beta") == 0) {
@@ -354,8 +353,6 @@ static bool params_load() {
             params.swrscan_span = i;
         } else if (strcmp(name, "ft8_show_all") == 0) {
             params.ft8_show_all = i;
-        } else if (strcmp(name, "ft8_band") == 0) {
-            params.ft8_band = i;
         } else if (strcmp(name, "ft8_protocol") == 0) {
             params.ft8_protocol = i;
         } else if (strcmp(name, "long_gen") == 0) {
@@ -379,6 +376,8 @@ static bool params_load() {
         } else if (strcmp(name, "long_f2") == 0) {
             params.long_f2 = i;
         }
+
+        if (params_load_bool(&params.atu, name, i)) continue;
 
         if (params_load_float(&params.play_gain_db_f, name, f)) continue;
         if (params_load_float(&params.rec_gain_db_f, name, f)) continue;
@@ -456,7 +455,6 @@ static void params_save() {
     if (params.dirty.band)                  params_write_int("band", params.band, &params.dirty.band);
     if (params.dirty.vol)                   params_write_int("vol", params.vol, &params.dirty.vol);
     if (params.dirty.sql)                   params_write_int("sql", params.sql, &params.dirty.sql);
-    if (params.dirty.atu)                   params_write_int("atu", params.atu, &params.dirty.atu);
     if (params.dirty.pwr)                   params_write_int("pwr", params.pwr * 10, &params.dirty.pwr);
 
     if (params.dirty.spectrum_beta)         params_write_int("spectrum_beta", params.spectrum_beta, &params.dirty.spectrum_beta);
@@ -533,7 +531,6 @@ static void params_save() {
     if (params.dirty.swrscan_span)          params_write_int("swrscan_span", params.swrscan_span, &params.dirty.swrscan_span);
 
     if (params.dirty.ft8_show_all)          params_write_int("ft8_show_all", params.ft8_show_all, &params.dirty.ft8_show_all);
-    if (params.dirty.ft8_band)              params_write_int("ft8_band", params.ft8_band, &params.dirty.ft8_band);
     if (params.dirty.ft8_protocol)          params_write_int("ft8_protocol", params.ft8_protocol, &params.dirty.ft8_protocol);
 
     if (params.dirty.long_gen)              params_write_int("long_gen", params.long_gen, &params.dirty.long_gen);
@@ -559,6 +556,8 @@ static void params_save() {
     params_save_uint8(&params.freq_accel);
 
     params_save_uint16(&params.ft8_tx_freq);
+
+    params_save_bool(&params.atu);
 
     params_save_bool(&params.mag_freq);
     params_save_bool(&params.mag_info);

@@ -85,7 +85,7 @@ typedef struct {
     int16_t             band;
     int16_t             vol;
     uint8_t             sql;
-    bool                atu;
+    params_bool_t       atu;
     bool                atu_loaded;
     uint8_t             ant;
     float               pwr;
@@ -194,7 +194,6 @@ typedef struct {
 
     bool                ft8_show_all;
     ftx_protocol_t      ft8_protocol;
-    uint8_t             ft8_band;
     params_uint16_t     ft8_tx_freq;
     params_bool_t       ft8_auto;
     params_str_t        ft8_cq_modifier;

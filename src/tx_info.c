@@ -209,6 +209,8 @@ static void update_tx_info(void * arg)
     }
     if (dialog_is_run() || !params.mag_alc.x) {
         lv_label_set_text_fmt(alc_label, "ALC: %1.1f", alc);
+    } else {
+        lv_label_set_text(alc_label, "");
     }
 }
 
@@ -266,7 +268,7 @@ void tx_info_update(float p, float s, float a) {
             lpf(&vswr, s, beta, 0.0f);
     }
     msg_id++;
-    scheduler_put(update_tx_info, NULL, 0);
+    scheduler_put_noargs(update_tx_info);
 }
 
 bool tx_info_refresh(uint8_t * prev_msg_id, float * alc_p, float * pwr_p, float * vswr_p) {

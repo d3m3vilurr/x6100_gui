@@ -77,6 +77,7 @@ lv_obj_t * waterfall_init(lv_obj_t * parent, uint64_t cur_freq) {
     lv_style_set_line_width(&middle_line_style, 1);
     lv_style_set_line_color(&middle_line_style, lv_color_hex(0xAAAAAA));
     lv_style_set_line_opa(&middle_line_style, LV_OPA_60);
+    lv_style_set_blend_mode(&middle_line_style, LV_BLEND_MODE_ADDITIVE);
 
     lv_msg_subscribe(MSG_SPECTRUM_ZOOM_CHANGED, zoom_changed_cd, NULL);
 
@@ -118,7 +119,7 @@ void waterfall_data(float *data_buf, uint16_t size, bool tx) {
         uint8_t id = v * 255;
         waterfall_cache[last_row_id * size + size - 1 - x] = id;
     }
-    scheduler_put(refresh_waterfall, NULL, 0);
+    scheduler_put_noargs(refresh_waterfall);
 }
 
 static void do_scroll_cb(lv_event_t * event) {
@@ -130,7 +131,7 @@ static void do_scroll_cb(lv_event_t * event) {
     } else {
         wf_center_freq = radio_center_freq;
     }
-    scheduler_put(refresh_waterfall, NULL, 0);
+    scheduler_put_noargs(refresh_waterfall);
 }
 
 void waterfall_set_height(lv_coord_t h) {
@@ -246,8 +247,6 @@ static void redraw_cb(lv_event_t * e) {
     int32_t src_x_offset;
     uint16_t src_y, src_x, dst_y, dst_x;
 
-    uint8_t * temp_buf = (uint8_t *)frame->data;
-
     uint8_t current_zoom = 1;
     if (params.waterfall_zoom.x) {
         current_zoom = zoom;
@@ -266,14 +265,18 @@ static void redraw_cb(lv_event_t * e) {
     for (src_y = 0; src_y < height; src_y++) {
         dst_y = ((height - src_y + last_row_id) % height);
         src_x_offset = (freq_offsets[src_y] - wf_center_freq) * WATERFALL_NFFT / width_hz;
-        for (dst_x = 0; dst_x < width; dst_x++) {
-            src_x = mapping[dst_x] - src_x_offset;
-            if ((src_x < 0) || (src_x >= WATERFALL_NFFT)) {
-                px_color = black;
-            } else {
-                px_color = (lv_color_t)wf_palette[*(waterfall_cache + (src_y * WATERFALL_NFFT + src_x))];
+        if ((src_x_offset > WATERFALL_NFFT) || (src_x_offset < -WATERFALL_NFFT)) {
+            memset((lv_color_t *)frame->data + dst_y * width, 0, width * PX_BYTES);
+        } else {
+            for (dst_x = 0; dst_x < width; dst_x++) {
+                src_x = mapping[dst_x] - src_x_offset;
+                if ((src_x < 0) || (src_x >= WATERFALL_NFFT)) {
+                    px_color = black;
+                } else {
+                    px_color = (lv_color_t)wf_palette[*(waterfall_cache + (src_y * WATERFALL_NFFT + src_x))];
+                }
+                *((lv_color_t*)frame->data + (dst_y * width + dst_x)) = px_color;
             }
-            *((lv_color_t*)temp_buf + (dst_y * width + dst_x)) = px_color;
         }
     }
 }
@@ -289,4 +292,5 @@ static void refresh_waterfall( void * arg) {
 
 static void zoom_changed_cd(void * s, lv_msg_t * m) {
     zoom = *(uint16_t *) lv_msg_get_payload(m);
+    lv_style_set_line_width(&middle_line_style, zoom / 2 + 2);
 }
