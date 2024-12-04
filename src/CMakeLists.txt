@@ -24,15 +24,18 @@ add_subdirectory(params)
 add_subdirectory(qth)
 
 include_directories(utf8)
+include_directories(${CMAKE_SYSROOT}/usr/include/)
 include_directories(${CMAKE_SYSROOT}/usr/include/RHVoice/)
 include_directories(${CMAKE_SYSROOT}/usr/include/ft8lib/)
+include_directories(${CMAKE_SYSROOT}/usr/include/glib-2.0/)
+include_directories(${CMAKE_SYSROOT}/usr/lib/glib-2.0/include/)
 
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 
 find_package(PkgConfig REQUIRED)
 find_package(Threads REQUIRED)
 pkg_check_modules(deps REQUIRED IMPORTED_TARGET
-    libnm dbus-glib-1 sqlite3 libpng libgps sndfile libudev libpulse libpulse-simple alsa
+    libnm dbus-glib-1 sqlite3 libpng libgps sndfile libudev libpulse libpulse-simple alsa glib-2.0
 )
 
 

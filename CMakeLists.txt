@@ -5,6 +5,7 @@ project(x6100_gui)
 include_directories(.)
 include_directories(third-party/rapidxml)
 include_directories(third-party/utf8)
+include_directories(lvgl)
 
 add_subdirectory(lvgl)
 
