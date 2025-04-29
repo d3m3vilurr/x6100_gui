@@ -6,15 +6,19 @@
  *  Copyright (c) 2022-2023 Belousov Oleg aka R1CBU
  */
 #include "util.h"
+#include "util.hpp"
 
-#include <stdlib.h>
-#include <stdio.h>
-#include <math.h>
-#include <sys/time.h>
-#include <time.h>
-#include <string.h>
-#include <string.h>
-
+extern "C" {
+    #include <complex.h>
+    #include <stdlib.h>
+    #include <stdio.h>
+    #include <math.h>
+    #include <sys/time.h>
+    #include <time.h>
+    #include <string.h>
+    #include <string.h>
+    #include <errno.h>
+}
 
 /**
  * Return time in ms from unix epoch
@@ -36,7 +40,7 @@ void get_time_str(char *str, size_t str_size) {
     snprintf(str, str_size, "%04i-%02i-%02i %02i-%02i-%02i", t->tm_year + 1900, t->tm_mon + 1, t->tm_mday, t->tm_hour, t->tm_min, t->tm_sec);
 }
 
-void split_freq(uint64_t freq, uint16_t *mhz, uint16_t *khz, uint16_t *hz) {
+void split_freq(int32_t freq, uint16_t *mhz, uint16_t *khz, uint16_t *hz) {
     *mhz = freq / 1000000;
     *khz = (freq / 1000) % 1000;
     *hz = freq % 1000;
@@ -59,13 +63,7 @@ uint64_t align_long(uint64_t x, uint16_t step) {
 }
 
 int32_t limit(int32_t x, int32_t min, int32_t max) {
-    if (x < min) {
-        return min;
-    } else if (x > max) {
-        return max;
-    }
-
-    return x;
+    return clip(x, min, max);
 }
 
 float sqr(float x) {
@@ -105,6 +103,25 @@ void to_bcd(uint8_t bcd_data[], uint64_t data, uint8_t len) {
     }
 }
 
+void to_bcd_be(uint8_t bcd_data[], uint64_t data, uint8_t len) {
+    int16_t i;
+
+    for (i = (len / 2); i >= 0; i--) {
+        uint8_t a = data % 10;
+
+        data /= 10;
+        a |= (data % 10) << 4;
+        data /= 10;
+        bcd_data[i] = a;
+    }
+
+    if (len & 1) {
+        bcd_data[i] &= 0x0f;
+        bcd_data[i] |= data % 10;
+    }
+
+}
+
 uint64_t from_bcd(const uint8_t bcd_data[], uint8_t len) {
     int16_t     i;
     uint64_t    data = 0;
@@ -114,6 +131,25 @@ uint64_t from_bcd(const uint8_t bcd_data[], uint8_t len) {
     }
 
     for (i = (len / 2) - 1; i >= 0; i--) {
+        data *= 10;
+        data += bcd_data[i] >> 4;
+        data *= 10;
+        data += bcd_data[i] & 0x0F;
+    }
+
+    return data;
+}
+
+uint64_t from_bcd_be(const uint8_t bcd_data[], uint8_t len) {
+    int16_t     i = 0;
+    uint64_t    data = 0;
+
+    if (len & 1) {
+        data = bcd_data[0] & 0x0F;
+        i++;
+    }
+
+    for (; i <= (len / 2); i++) {
         data *= 10;
         data += bcd_data[i] >> 4;
         data *= 10;
@@ -194,12 +230,12 @@ size_t wrms_delay(wrms_t wr) {
     return wr->delay;
 }
 
-void wrms_pushcf(wrms_t wr, liquid_float_complex x) {
+void wrms_pushcf(wrms_t wr, cfloat x) {
     if (wr->remain == 0) {
         wr->remain = wr->delay;
     }
     wr->remain--;
-    float x_db = 10.0f * log10f(sqrt(crealf(x * conjf(x))));
+    float x_db = 10.0f * log10f(std::abs(x));
     if (x_db < -121.0f) {
         x_db = -121.0f;
     }
@@ -223,7 +259,7 @@ float wrms_get_val(wrms_t wr) {
 
 size_t argmax(float * x, size_t n) {
     float max = -INFINITY;
-    size_t pos;
+    size_t pos = 0;
     for (size_t i = 0; i < n; i++)
     {
         if (x[i] > max) {
@@ -270,4 +306,26 @@ char * util_canonize_callsign(const char * callsign, bool strip_slashes) {
         result = strdup(callsign);
     }
     return result;
+}
+
+
+void sleep_usec(uint32_t msec) {
+    // does not interfere with signals like sleep and usleep do
+    struct timespec req_ts;
+    req_ts.tv_sec = msec / 1000000;
+    req_ts.tv_nsec = (msec % 1000000) * 1000L;
+    int32_t olderrno = errno; // Some OS (especially MacOSX) seem to set errno to ETIMEDOUT when sleeping
+
+    while (1) {
+        /* Sleep for the time specified in req_ts. If interrupted by a
+        signal, place the remaining time left to sleep back into req_ts. */
+        int rval = nanosleep(&req_ts, &req_ts);
+        if (rval == 0)
+            break; // Completed the entire sleep time; all done.
+        else if (errno == EINTR)
+            continue; // Interrupted by a signal. Try again.
+        else
+            break; // Some other error; bail out.
+    }
+    errno = olderrno;
 }

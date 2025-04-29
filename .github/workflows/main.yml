@@ -15,9 +15,21 @@ jobs:
         shell: bash
 
     steps:
-    - name: cleanup
-      run: |
-        sudo rm -rf /usr/share/dotnet
+    - name: Free Disk Space (Ubuntu)
+      uses: jlumbroso/free-disk-space@main
+      with:
+        # this might remove tools that are actually needed,
+        # if set to "true" but frees about 6 GB
+        tool-cache: false
+
+        # all of these default to true, but feel free to set to
+        # "false" if necessary for your workflow
+        android: true
+        dotnet: true
+        haskell: true
+        large-packages: false
+        docker-images: true
+        swap-storage: true
     - name: check free space
       run: |
         df -h
@@ -42,12 +54,21 @@ jobs:
         sed -i "s,^X6100_GUI_SITE_METHOD = git,X6100_GUI_SITE_METHOD = local,g" AetherX6100Buildroot/br2_external/package/x6100-gui/x6100_gui.mk
         sed -i "s,^X6100_GUI_GIT_SUBMODULES,# X6100_GUI_GIT_SUBMODULES,g" AetherX6100Buildroot/br2_external/package/x6100-gui/x6100_gui.mk
 
-    - name: Cache ccache
-      id: cache-ccache
+    # Ccache
+    - name: Prepare ccache timestamp
+      id: ccache_cache_timestamp
+      shell: cmake -P {0}
+      run: |
+        string(TIMESTAMP current_date "%Y-%m-%d-%H;%M;%S" UTC)
+        file(APPEND "$ENV{GITHUB_OUTPUT}" "timestamp=${current_date}")
+
+    - name: Ccache cache files
       uses: actions/cache@v4
       with:
         path: ~/.buildroot-ccache
-        key: ${{ runner.os }}-ccache
+        key: ${{ runner.os }}-ccache-${{ steps.ccache_cache_timestamp.outputs.timestamp }}
+        restore-keys: |
+          ${{ runner.os }}-ccache-
 
     # Configure
     - name: Configure
@@ -61,6 +82,11 @@ jobs:
         make lame mpg123
         make libsndfile-dirclean
         make
+
+    # Replace U-boot
+    - name: Replace u-boot
+      run: |
+        dd if=x6100_gui/u-boot/u-boot-sunxi-with-spl.bin of=AetherX6100Buildroot/build/images/sdcard.img seek=8K bs=1 conv=notrunc
 
     # Compress image
     - name: Compress image

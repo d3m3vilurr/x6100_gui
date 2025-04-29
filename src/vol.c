@@ -7,12 +7,14 @@
  */
 
 #include "vol.h"
+
 #include "msg.h"
 #include "radio.h"
 #include "main.h"
 #include "params/params.h"
 #include "voice.h"
 #include "util.h"
+#include "cfg/mode.h"
 
 static vol_mode_t   vol_mode = VOL_VOL;
 
@@ -38,7 +40,9 @@ void vol_update(int16_t diff, bool voice) {
             break;
 
         case VOL_RFG:
-            x = radio_change_rfg(diff);
+            x = subject_get_int(cfg_cur.band->rfg.val);
+            x = limit(x + diff, 0, 100);
+            subject_set_int(cfg_cur.band->rfg.val, x);
             msg_update_text_fmt("#%3X RF gain: %i", color, x);
 
             if (diff) {
@@ -49,7 +53,9 @@ void vol_update(int16_t diff, bool voice) {
             break;
 
         case VOL_SQL:
-            x = radio_change_sql(diff);
+            x = subject_get_int(cfg.sql.val);
+            x = limit(x + diff, 0, 100);
+            subject_set_int(cfg.sql.val, x);
             msg_update_text_fmt("#%3X Voice SQL: %i", color, x);
 
             if (diff) {
@@ -60,12 +66,13 @@ void vol_update(int16_t diff, bool voice) {
             break;
 
         case VOL_FILTER_LOW:
-            freq = params_current_mode_filter_low_get();
+            x = subject_get_int(cfg_cur.filter.low);
             if (diff) {
                 // TODO: make step depending on freq
-                freq = align_int(freq + diff * 10, 10);
+                x = align_int(x + diff * 10, 10);
+                x = cfg_mode_set_low_filter(x);
             }
-            x = radio_change_filter_low(freq);
+            // x = radio_change_filter_low(freq);
             msg_update_text_fmt("#%3X Filter low: %i Hz", color, x);
 
             if (diff) {
@@ -76,10 +83,11 @@ void vol_update(int16_t diff, bool voice) {
             break;
 
         case VOL_FILTER_HIGH:
-            freq = params_current_mode_filter_high_get();
+            // freq = params_current_mode_filter_high_get();
+            x = subject_get_int(cfg_cur.filter.high);
             if (diff) {
                 uint8_t freq_step;
-                switch (radio_current_mode()) {
+                switch (subject_get_int(cfg_cur.mode)) {
                 case x6100_mode_cw:
                 case x6100_mode_cwr:
                     freq_step = 10;
@@ -88,9 +96,10 @@ void vol_update(int16_t diff, bool voice) {
                     freq_step = 50;
                     break;
                 }
-                freq = align_int(freq + diff * freq_step, freq_step);
+                x = align_int(x + diff * freq_step, freq_step);
+                x = cfg_mode_set_high_filter(x);
             }
-            x = radio_change_filter_high(freq);
+            // x = radio_change_filter_high(freq);
             msg_update_text_fmt("#%3X Filter high: %i Hz", color, x);
 
             if (diff) {
@@ -101,22 +110,26 @@ void vol_update(int16_t diff, bool voice) {
             break;
 
         case VOL_FILTER_BW:;
-            uint32_t new_bw = params_current_mode_filter_bw_get();
+            uint32_t bw = subject_get_int(cfg_cur.filter.bw);
             if (diff) {
-                new_bw = align_int(new_bw + diff * 20, 20);
+                bw = align_int(bw + diff * 20, 20);
+                subject_set_int(cfg_cur.filter.bw, bw);
             }
-            x = radio_change_filter_bw(new_bw);
-            msg_update_text_fmt("#%3X Filter bw: %i Hz", color, x);
+            msg_update_text_fmt("#%3X Filter bw: %i Hz", color, bw);
 
             if (diff) {
-                voice_delay_say_text_fmt("%i", x);
+                voice_delay_say_text_fmt("%i", bw);
             } else if (voice) {
                 voice_say_text_fmt("Bandwidth filter limit");
             }
             break;
 
         case VOL_PWR:
-            f = radio_change_pwr(diff);
+            f = subject_get_float(cfg.pwr.val);
+            f += diff * 0.1f;
+            f = LV_MIN(10.0f, f);
+            f = LV_MAX(0.1f, f);
+            subject_set_float(cfg.pwr.val, f);
             msg_update_text_fmt("#%3X Power: %0.1f W", color, f);
 
             if (diff) {
@@ -171,13 +184,8 @@ void vol_update(int16_t diff, bool voice) {
             }
             break;
 
-        case VOL_SPMODE:
-            b = radio_change_spmode(diff);
-            msg_update_text_fmt("#%3X Speaker mode: %s", color, b ? "On" : "Off");
-            break;
-
         case VOL_VOICE_LANG:
-            s = voice_change(diff);
+            s = (char *)voice_change(diff);
             msg_update_text_fmt("#%3X Voice: %s", color, s);
 
             if (diff) {

@@ -10,8 +10,7 @@
 
 // Messages IDs for UI part messaging (publishing/subscribing)
 enum {
-    MSG_SPECTRUM_ZOOM_CHANGED,
-    MSG_RADIO_MODE_CHANGED,
     MSG_PARAM_CHANGED,
     MSG_WIFI_STATE_CHANGED,
+    MSG_USB_DEVICE_CHANGED,
 };

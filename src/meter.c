@@ -21,11 +21,15 @@ static int16_t          min_db = S1;
 static int16_t          max_db = S9_40;
 
 static int16_t          meter_db = S1;
+static int16_t          meter_db_raw = S1;
 static float            noise_level = S_MIN;
 
 static int16_t          meter_peak = S1;
 static int64_t          meter_peak_time;
 static int64_t          now;
+
+static bool             pre=false;
+static bool             att=false;
 
 static lv_obj_t         *obj;
 
@@ -44,6 +48,10 @@ static s_item_t s_items[NUM_ITEMS] = {
     { .label = "+40",   .db = S9_40 }
 };
 
+static void on_bool_value_change(Subject *subj, void *user_data) {
+    *(bool*)user_data = subject_get_int(subj);
+}
+
 static void meter_draw_cb(lv_event_t * e) {
     lv_obj_t            *obj = lv_event_get_target(e);
     lv_draw_ctx_t       *draw_ctx = lv_event_get_draw_ctx(e);
@@ -55,7 +63,7 @@ static void meter_draw_cb(lv_event_t * e) {
     lv_coord_t y1 = obj->coords.y1 + 17;
 
     lv_coord_t w = lv_obj_get_width(obj) - 80;
-    lv_coord_t h = lv_obj_get_height(obj) - 1;
+    // lv_coord_t h = lv_obj_get_height(obj) - 1;
 
     uint8_t     slice_db = 3;
     uint8_t     slices_total = (max_db - min_db) / slice_db;
@@ -138,6 +146,7 @@ static void rx_cb(lv_event_t * e) {
     lv_obj_clear_flag(obj, LV_OBJ_FLAG_HIDDEN);
 }
 
+
 lv_obj_t * meter_init(lv_obj_t * parent) {
     obj = lv_obj_create(parent);
 
@@ -147,16 +156,21 @@ lv_obj_t * meter_init(lv_obj_t * parent) {
     lv_obj_add_event_cb(obj, rx_cb, EVENT_RADIO_RX, NULL);
     lv_obj_add_event_cb(obj, meter_draw_cb, LV_EVENT_DRAW_MAIN_END, NULL);
 
+    subject_add_delayed_observer(cfg_cur.pre, on_bool_value_change, &pre);
+    on_bool_value_change(cfg_cur.pre, &pre);
+    subject_add_delayed_observer(cfg_cur.att, on_bool_value_change, &att);
+    on_bool_value_change(cfg_cur.att, &att);
+
     return obj;
 }
 
 void meter_update(int16_t db, float beta) {
     noise_level = spectrum_get_min();
-    if (params_band_cur_att_get()) {
+    if (att) {
         db += 14;
         noise_level+= 14.0f;
     }
-    if (params_band_cur_pre_get()){
+    if (pre){
         db -= 14;
         noise_level -= 14.0f;
     }
@@ -165,6 +179,7 @@ void meter_update(int16_t db, float beta) {
     } else if (db > max_db) {
         db = max_db;
     }
+    meter_db_raw = db;
     now = get_time();
     if (db > meter_peak) {
         meter_peak = db;
@@ -174,4 +189,8 @@ void meter_update(int16_t db, float beta) {
     }
     meter_db = meter_db * beta + db * (1.0f - beta);
     event_send(obj, LV_EVENT_REFRESH, NULL);
+}
+
+int16_t meter_get_raw_db() {
+    return meter_db_raw;
 }

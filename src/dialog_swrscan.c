@@ -6,13 +6,9 @@
  *  Copyright (c) 2022-2023 Belousov Oleg aka R1CBU
  */
 
-#include <stdlib.h>
-#include <stdio.h>
-#include <unistd.h>
-#include <math.h>
+#include "dialog_swrscan.h"
 
 #include "dialog.h"
-#include "dialog_swrscan.h"
 #include "styles.h"
 #include "params/params.h"
 #include "radio.h"
@@ -20,6 +16,12 @@
 #include "util.h"
 #include "keyboard.h"
 #include "main_screen.h"
+#include "buttons.h"
+
+#include <stdlib.h>
+#include <stdio.h>
+#include <unistd.h>
+#include <math.h>
 
 #define STEPS   50
 
@@ -33,18 +35,63 @@ static lv_coord_t           h;
 static bool                 run = false;
 
 static uint16_t             freq_index;
-static uint64_t             freq_start;
-static uint64_t             freq_center;
-static uint64_t             freq_stop;
+static uint32_t             freq_start;
+static uint32_t             freq_center;
+static uint32_t             freq_stop;
+
+static bool    linear;
+static int32_t span;
+
+static ObserverDelayed *freq_obs;
+static ObserverDelayed *linear_obs;
+static ObserverDelayed *span_obs;
 
 static void construct_cb(lv_obj_t *parent);
+static void destruct_cb();
 static void key_cb(lv_event_t * e);
+
+static void dialog_swrscan_run_cb(button_item_t *item);
+static void dialog_swrscan_scale_cb(button_item_t *item);
+static void dialog_swrscan_span_cb(button_item_t *item);
+
+static void set_span(Subject *subj, void *user_data);
+static void set_linear(Subject *subj, void *user_data);
+
+static const char *scale_label_fn();
+static const char *span_label_fn();
+
+static button_item_t btn_run = {
+    .type  = BTN_TEXT,
+    .label = "Run",
+    .press = dialog_swrscan_run_cb,
+};
+static button_item_t btn_scale = {
+    .type  = BTN_TEXT_FN,
+    .label_fn = scale_label_fn,
+    .press = dialog_swrscan_scale_cb,
+    .subj = &cfg.swrscan_linear.val,
+};
+static button_item_t btn_span = {
+    .type  = BTN_TEXT_FN,
+    .label_fn = span_label_fn,
+    .press = dialog_swrscan_span_cb,
+    .subj = &cfg.swrscan_span.val,
+};
+
+static buttons_page_t btn_page = {
+    {
+     &btn_run,
+     &btn_scale,
+     &btn_span,
+     }
+};
 
 static dialog_t             dialog = {
     .run = false,
     .construct_cb = construct_cb,
-    .destruct_cb = NULL,
+    .destruct_cb = destruct_cb,
     .audio_cb = NULL,
+    .btn_page = &btn_page,
     .key_cb = key_cb
 };
 
@@ -57,31 +104,27 @@ static void do_init() {
     }
 
     freq_index = 0;
-    freq_center = params_band_cur_freq_get();
+    freq_center = subject_get_int(cfg_cur.fg_freq);
 
-    freq_start = freq_center - params.swrscan_span / 2;
-    freq_stop = freq_center + params.swrscan_span / 2;
+    freq_start = freq_center - span / 2;
+    freq_stop = freq_center + span / 2;
 }
 
 static void do_step(float vswr) {
     data[freq_index] = vswr;
+    int16_t filtered_index = (STEPS + freq_index - 2) % STEPS;
 
-    for (int16_t i = 0; i < STEPS; i++) {
-        data_filtered[i] = 0.0;
-
-        for (int16_t n = -2; n <= 2; n++) {
-            int16_t index = i + n;
-
-            if (index < 0) {
-                index = 0;
-            } else if (index > STEPS-1) {
-                index = STEPS-1;
-            }
-
-            data_filtered[i] += data[index];
+    float avg = 0.0f;
+    for (int16_t n = -2; n <= 2; n++) {
+        int16_t index = filtered_index + n;
+        if (index < 0) {
+            index = 0;
+        } else if (index > STEPS-1) {
+            index = STEPS-1;
         }
-        data_filtered[i] /= 5.0f;
+        avg += data[index];
     }
+    data_filtered[filtered_index] = avg / 5.0f;
 
     event_send(chart, LV_EVENT_REFRESH, NULL);
 
@@ -91,14 +134,14 @@ static void do_step(float vswr) {
         freq_index = 0;
     }
 
-    uint64_t freq = freq_start + (freq_stop - freq_start) * freq_index / STEPS;
+    uint32_t freq = freq_start + (freq_stop - freq_start) * freq_index / STEPS;
     radio_set_freq(freq);
 }
 
 static lv_coord_t calc_y(float vswr) {
     float x;
 
-    if (params.swrscan_linear) {
+    if (linear) {
         x = (vswr - 1.0f) / (5.0f - 1.0f);
     } else {
         float c = 1.0f / logf(10.0);
@@ -118,10 +161,10 @@ static void draw_cb(lv_event_t * e) {
     lv_draw_line_dsc_init(&line_dsc);
 
     lv_coord_t x1 = obj->coords.x1;
-    lv_coord_t y1 = obj->coords.y1;
+    lv_coord_t y1 = obj->coords.y1 - 5;
 
     lv_coord_t w = lv_obj_get_width(obj);
-    lv_coord_t h = lv_obj_get_height(obj);
+    lv_coord_t h = lv_obj_get_height(obj) - 5;
 
     lv_point_t a, b;
 
@@ -160,13 +203,13 @@ static void draw_cb(lv_event_t * e) {
         lv_draw_label(draw_ctx, &dsc_label, &area, str, NULL);
     }
 
-    uint64_t    freq = freq_center - params.swrscan_span / 4;
+    uint32_t    freq = freq_center - span / 4;
     uint16_t    mhz, khz, hz;
 
     a.y = y1;
     b.y = y1 + h;
 
-    for (int16_t x = -1; x <= 1; x++, freq += params.swrscan_span / 4) {
+    for (int16_t x = -1; x <= 1; x++, freq += span / 4) {
         a.x = x1 + w / 2 + (w / 4) * x;
         b.x = a.x;
 
@@ -189,7 +232,7 @@ static void draw_cb(lv_event_t * e) {
     line_dsc.color = lv_color_white();
     line_dsc.width = 4;
 
-    for (uint16_t i = 0; i < STEPS; i++) {
+    for (uint16_t i = 1; i < STEPS; i++) {
         a.x = x1 + (i - 1) * w / STEPS;
         a.y = y1 + calc_y(data_filtered[i-1]);
 
@@ -200,15 +243,20 @@ static void draw_cb(lv_event_t * e) {
     }
 }
 
-static void freq_update_cb(lv_event_t * e) {
+static void freq_update_cb(Subject *subj, void *user_data) {
     do_init();
     lv_obj_invalidate(chart);
 }
 
 static void construct_cb(lv_obj_t *parent) {
     dialog.obj = dialog_init(parent);
+    linear_obs = subject_add_delayed_observer_and_call(cfg.swrscan_linear.val, set_linear, NULL);
+    span_obs = subject_add_delayed_observer_and_call(cfg.swrscan_span.val, set_span, NULL);
 
-    lv_obj_add_event_cb(dialog.obj, freq_update_cb, EVENT_FREQ_UPDATE, NULL);
+    buttons_unload_page();
+    buttons_load_page(&btn_page);
+
+    freq_obs = subject_add_delayed_observer(cfg_cur.fg_freq, freq_update_cb, NULL);
 
     chart  = lv_obj_create(dialog.obj);
 
@@ -226,6 +274,26 @@ static void construct_cb(lv_obj_t *parent) {
     lv_obj_add_event_cb(chart, key_cb, LV_EVENT_KEY, NULL);
 
     do_init();
+}
+
+static void destruct_cb() {
+    if (run) {
+        // Stop
+        dialog_swrscan_run_cb(NULL);
+    }
+    if (freq_obs) {
+        observer_delayed_del(freq_obs);
+        freq_obs = NULL;
+    }
+    if (linear_obs) {
+        observer_delayed_del(linear_obs);
+        linear_obs = NULL;
+    }
+    if (span_obs) {
+        observer_delayed_del(span_obs);
+        span_obs = NULL;
+    }
+    radio_set_freq(subject_get_int(cfg_cur.fg_freq));
 }
 
 static void key_cb(lv_event_t * e) {
@@ -248,10 +316,11 @@ static void key_cb(lv_event_t * e) {
     }
 }
 
-void dialog_swrscan_run_cb(lv_event_t * e) {
+void dialog_swrscan_run_cb(button_item_t *item) {
     if (run) {
-        radio_stop_swrscan();
         run = false;
+        radio_stop_swrscan();
+        radio_set_freq(freq_center);
         mem_load(MEM_BACKUP_ID);
     } else {
         mem_save(MEM_BACKUP_ID);
@@ -261,44 +330,67 @@ void dialog_swrscan_run_cb(lv_event_t * e) {
     }
 }
 
-void dialog_swrscan_scale_cb(lv_event_t * e) {
-    params_lock();
-    params.swrscan_linear = !params.swrscan_linear;
-    params_unlock(&params.dirty.swrscan_linear);
-
-    event_send(chart, LV_EVENT_REFRESH, NULL);
+void dialog_swrscan_scale_cb(button_item_t *item) {
+    bool new_val = !subject_get_int(cfg.swrscan_linear.val);
+    subject_set_int(cfg.swrscan_linear.val, new_val);
 }
 
-void dialog_swrscan_span_cb(lv_event_t * e) {
+void dialog_swrscan_span_cb(button_item_t *item) {
     if (run) {
         return;
     }
 
-    params_lock();
+    int32_t span = subject_get_int(cfg.swrscan_span.val);
 
-    switch (params.swrscan_span) {
+    switch (span) {
         case 50000:
-            params.swrscan_span = 100000;
+            span = 100000;
             break;
 
         case 100000:
-            params.swrscan_span = 200000;
+            span = 200000;
             break;
 
         case 200000:
-            params.swrscan_span = 500000;
+            span = 500000;
             break;
 
         case 500000:
-            params.swrscan_span = 50000;
+            span = 50000;
             break;
     }
+    subject_set_int(cfg.swrscan_span.val, span);
 
-    params_unlock(&params.dirty.swrscan_span);
     do_init();
     event_send(chart, LV_EVENT_REFRESH, NULL);
 }
 
+void set_span(Subject *subj, void *user_data) {
+    span = subject_get_int(subj);
+}
+
+void set_linear(Subject *subj, void *user_data) {
+    linear = subject_get_int(subj);
+}
+
+const char *scale_label_fn() {
+    if (subject_get_int(cfg.swrscan_linear.val)) {
+        return "Scale:\nLinear";
+    } else {
+        return "Scale:\nLog";
+    }
+}
+
+const char *span_label_fn() {
+    static char buf[20];
+    const char * fmt = "Span:\n%u kHz";
+    int32_t val = subject_get_int(cfg.swrscan_span.val);
+    sprintf(buf, fmt, val / 1000);
+    return buf;
+}
+
 void dialog_swrscan_update(float vswr) {
-    do_step(vswr);
+    if (run) {
+        do_step(vswr);
+    }
 }

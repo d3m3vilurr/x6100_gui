@@ -24,7 +24,6 @@
 #include "waterfall.h"
 #include "keypad.h"
 #include "params/params.h"
-#include "bands.h"
 #include "audio.h"
 #include "cw.h"
 #include "pannel.h"
@@ -38,6 +37,7 @@
 #include "qso_log.h"
 #include "scheduler.h"
 #include "wifi.h"
+#include "usb_devices.h"
 
 #define DISP_BUF_SIZE (800 * 480 * 4)
 
@@ -57,6 +57,7 @@ int main(void) {
     fbdev_init();
     audio_init();
     event_init();
+    usb_devices_monitor_init();
 
     lv_disp_draw_buf_init(&disp_buf, buf, NULL, DISP_BUF_SIZE);
     lv_disp_drv_init(&disp_drv);
@@ -75,10 +76,10 @@ int main(void) {
 
     keyboard_init();
 
-    keypad_t *keypad = keypad_init("/dev/input/event0");
-    keypad_t *power = keypad_init("/dev/input/event4");
+    keypad_init("/dev/input/event0");
+    keypad_init("/dev/input/event4");
 
-    rotary_t *main = rotary_init("/dev/input/event1");
+    rotary_init("/dev/input/event1");
 
     vol = rotary_init("/dev/input/event2");
     mfk = encoder_init("/dev/input/event3");
@@ -96,20 +97,19 @@ int main(void) {
     vol_change_mode(0);
     styles_init(params.theme.x);
 
-    dsp_init(params_current_mode_spectrum_factor_get());
+    dsp_init();
     lv_obj_t *main_obj = main_screen();
 
     cw_init();
     rtty_init();
     radio_init(
         &main_screen_notify_tx,
-        &main_screen_notify_rx,
-        &main_screen_notify_atu_update
+        &main_screen_notify_rx
     );
     wifi_power_setup();
     backlight_init();
     cat_init();
-    pannel_visible();
+    // pannel_visible();
     gps_init();
     if (!qso_log_init()) {
         LV_LOG_ERROR("Can't init QSO log");
@@ -130,6 +130,7 @@ int main(void) {
     int64_t next_loop_time, sleep_time, loop_start_time;
     while (1) {
         loop_start_time = get_time();
+        observer_delayed_notify_all();
         event_obj_check();
         scheduler_work();
         next_loop_time = lv_timer_handler() + loop_start_time;

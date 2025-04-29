@@ -61,6 +61,8 @@ typedef struct {
 typedef enum {
 
     HKEY_CE = LV_KEY_BACKSPACE,
+    HKEY_UP=17,
+    HKEY_DOWN,
     HKEY_DOT = '.',
     HKEY_0 = '0',
     HKEY_1,
@@ -72,11 +74,9 @@ typedef enum {
     HKEY_7,
     HKEY_8,
     HKEY_9,
-    HKEY_SPCH,
+    HKEY_SPCH=0x299,  // KEY_MACRO10
     HKEY_TUNER,
     HKEY_XFC,
-    HKEY_UP,
-    HKEY_DOWN,
     HKEY_VM,
     HKEY_NW,
     HKEY_F1,
@@ -126,9 +126,7 @@ extern uint32_t EVENT_HKEY;
 extern uint32_t EVENT_RADIO_TX;
 extern uint32_t EVENT_RADIO_RX;
 extern uint32_t EVENT_SCREEN_UPDATE;
-extern uint32_t EVENT_ATU_UPDATE;
 extern uint32_t EVENT_MSG_UPDATE;
-extern uint32_t EVENT_FREQ_UPDATE;
 extern uint32_t EVENT_GPS;
 extern uint32_t EVENT_BAND_UP;
 extern uint32_t EVENT_BAND_DOWN;

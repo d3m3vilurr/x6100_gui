@@ -11,7 +11,7 @@
 #include "migrations.h"
 
 #include "db.h"
-#include "band.h"
+#include "../cfg/digital_modes.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -63,7 +63,7 @@ static int _1_create_ftx_table() {
         "INNER JOIN memory AS m3 ON m1.id == m3.id  "
         "WHERE m1.name='label' AND m2.name='vfoa_freq' AND m3.name = 'vfoa_mode' AND m1.id >= 200; "
         "COMMIT",
-        PARAMS_DIGI_TYPE_FT8, PARAMS_DIGI_TYPE_FT4
+        CFG_DIG_TYPE_FT8, CFG_DIG_TYPE_FT4
     );
     if (rc == -1) {
         printf("Cannot allocate SQL query\n");
@@ -78,10 +78,21 @@ static int _1_create_ftx_table() {
     return 0;
 }
 
+static int _2_update_atu_freq() {
+    int rc;
+    rc = sqlite3_exec(db, "UPDATE atu SET freq=freq * 50000 + 25000 WHERE freq < 500000", NULL, NULL, NULL);
+    if (rc != SQLITE_OK) {
+        printf("Cannot update ATU frequencies: %s\n", sqlite3_errmsg(db));
+        return 1;
+    }
+    return 0;
+}
+
 /* Migrations array */
 static int (*migrations[])() = {
     _0_init_migrations,
     _1_create_ftx_table,
+    _2_update_atu_freq,
 };
 
 int migrations_apply(void) {
