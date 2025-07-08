@@ -26,7 +26,7 @@
 #include "params/params.h"
 #include "audio.h"
 #include "cw.h"
-#include "pannel.h"
+#include "panel.h"
 #include "cat.h"
 #include "rtty.h"
 #include "backlight.h"
@@ -98,18 +98,17 @@ int main(void) {
     styles_init(params.theme.x);
 
     dsp_init();
+    radio_init();
     lv_obj_t *main_obj = main_screen();
 
     cw_init();
     rtty_init();
-    radio_init(
-        &main_screen_notify_tx,
-        &main_screen_notify_rx
-    );
+    radio_set_rx_tx_notify_fn(&main_screen_notify_rx_tx);
+    radio_set_low_power_cb(&main_screen_notify_low_power);
     wifi_power_setup();
     backlight_init();
     cat_init();
-    // pannel_visible();
+    // panel_visible();
     gps_init();
     if (!qso_log_init()) {
         LV_LOG_ERROR("Can't init QSO log");

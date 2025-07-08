@@ -11,13 +11,16 @@
 #include "../lvgl/lvgl.h"
 #include "../util.h"
 #include <aether_radio/x6100_control/control.h>
+#include <ft8lib/constants.h>
 
 #include <stdio.h>
 #include <stdlib.h>
 
 cfg_t cfg;
 
-cfg_cur_t cfg_cur;
+cfg_cur_t cfg_cur = {
+    .band = &cfg_band,
+};
 
 static band_info_t cur_band_info;
 
@@ -48,10 +51,65 @@ static void on_cur_freq_step_change(Subject *subj, void *user_data);
 static void on_cur_zoom_change(Subject *subj, void *user_data);
 
 
+// All allowed modes for VOL fast access
+cfg_vol_mode_t cfg_encoder_vol_modes[] = {
+    VOL_VOL,
+    VOL_SQL,
+    VOL_RFG,
+    VOL_FILTER_LOW,
+    VOL_FILTER_HIGH,
+    VOL_PWR,
+    VOL_HMIC,
+    VOL_MIC,
+    VOL_IMIC,
+    VOL_MONI,
+    VOL_FILTER_BW,
+};
+
+// All allowed modes for MFK fast access
+cfg_mfk_mode_t cfg_encoder_mfk_modes[] = {
+    MFK_SPECTRUM_FACTOR,
+    MFK_KEY_SPEED,
+    MFK_KEY_MODE,
+    MFK_IAMBIC_MODE,
+    MFK_KEY_TONE,
+    MFK_KEY_VOL,
+    MFK_KEY_TRAIN,
+    MFK_QSK_TIME,
+    MFK_KEY_RATIO,
+
+    MFK_DNF,
+    MFK_DNF_CENTER,
+    MFK_DNF_WIDTH,
+    MFK_DNF_AUTO,
+    MFK_NB,
+    MFK_NB_LEVEL,
+    MFK_NB_WIDTH,
+    MFK_NR,
+    MFK_NR_LEVEL,
+
+    MFK_AGC_HANG,
+    MFK_AGC_KNEE,
+    MFK_AGC_SLOPE,
+    MFK_COMP,
+
+    MFK_CW_DECODER,
+    MFK_CW_TUNE,
+    MFK_CW_DECODER_SNR,
+    MFK_CW_DECODER_PEAK_BETA,
+    MFK_CW_DECODER_NOISE_BETA,
+
+    MFK_ANT,
+    MFK_RIT,
+    MFK_XIT,
+};
+
+
 // #define TEST_CFG
 #ifdef TEST_CFG
 #include "test_cfg.c"
 #endif
+
 
 int cfg_init(sqlite3 *db) {
     int rc;
@@ -67,7 +125,7 @@ int cfg_init(sqlite3 *db) {
     //     return rc;
     // }
     cfg_band_params_init(db);
-    cfg_cur.band = &cfg_band;
+    // cfg_cur.band = &cfg_band;
 
     cfg_mode_params_init(db);
     // rc = init_mode_cfg(db);
@@ -234,15 +292,38 @@ static int init_params_cfg(sqlite3 *db) {
     cfg_params_init(db);
 
     /* Fill configuration */
+    fill_cfg_item(&cfg.vol_modes, subject_create_uint64(
+        (1 << VOL_VOL) | (1 << VOL_RFG) | (1 << VOL_FILTER_LOW) | (1 << VOL_FILTER_HIGH) | (1 << VOL_PWR) | (1 << VOL_HMIC)
+    ), "vol_modes");
+    fill_cfg_item(&cfg.mfk_modes, subject_create_uint64(
+        (1 << MFK_SPECTRUM_FACTOR) | (1 << MFK_AGC_KNEE) | (1 << MFK_DNF)
+    ), "mfk_modes");
+
     fill_cfg_item(&cfg.vol, subject_create_int(20), "vol");
     fill_cfg_item(&cfg.sql, subject_create_int(0), "sql");
     fill_cfg_item_float(&cfg.pwr, subject_create_float(5.0f), 0.1f, "pwr");
+    fill_cfg_item_float(&cfg.output_gain, subject_create_float(0.0f), 0.2f, "output_gain");
 
     fill_cfg_item(&cfg.key_tone, subject_create_int(700), "key_tone");
     fill_cfg_item(&cfg.band_id, subject_create_int(5), "band");
     fill_cfg_item(&cfg.ant_id, subject_create_int(1), "ant");
     fill_cfg_item(&cfg.atu_enabled, subject_create_int(false), "atu");
-    fill_cfg_item(&cfg.comp, subject_create_int(true), "comp");
+    fill_cfg_item(&cfg.comp, subject_create_int(4), "comp");
+    fill_cfg_item_float(&cfg.comp_threshold_offset, subject_create_float(0.0f), 0.5f, "comp_threshold_offset");
+    fill_cfg_item_float(&cfg.comp_makeup_offset, subject_create_float(0.0f), 0.5f, "comp_makeup_offset");
+
+    fill_cfg_item(&cfg.rit, subject_create_int(0), "rit");
+    fill_cfg_item(&cfg.xit, subject_create_int(0), "xit");
+
+    fill_cfg_item(&cfg.tx_i_offset, subject_create_int(0), "tx_i_offset");
+    fill_cfg_item(&cfg.tx_q_offset, subject_create_int(0), "tx_q_offset");
+
+    /* UI */
+    fill_cfg_item(&cfg.auto_level_enabled, subject_create_int(true), "auto_level_enabled");
+    fill_cfg_item_float(&cfg.auto_level_offset, subject_create_float(0.0f), 0.5f, "auto_level_offset");
+    fill_cfg_item(&cfg.knob_info, subject_create_int(true), "knob_info");
+
+    /* Key */
 
     fill_cfg_item(&cfg.key_speed, subject_create_int(15), "key_speed");
     fill_cfg_item(&cfg.key_mode, subject_create_int(x6100_key_manual), "key_mode");
@@ -282,8 +363,12 @@ static int init_params_cfg(sqlite3 *db) {
     fill_cfg_item(&cfg.swrscan_span, subject_create_int(200000), "swrscan_span");
 
     // FT8
+    fill_cfg_item(&cfg.ft8_show_all, subject_create_int(true), "ft8_show_all");
+    fill_cfg_item(&cfg.ft8_protocol, subject_create_int(FTX_PROTOCOL_FT8), "ft8_protocol");
+    fill_cfg_item(&cfg.ft8_auto, subject_create_int(true), "ft8_auto");
     fill_cfg_item(&cfg.ft8_hold_freq, subject_create_int(true), "ft8_hold_freq");
     fill_cfg_item(&cfg.ft8_max_repeats, subject_create_int(6), "ft8_max_repeats");
+    fill_cfg_item(&cfg.ft8_omit_cq_qth, subject_create_int(false), "ft8_omit_cq_qth");
 
     /* Bind callbacks */
     // subject_add_observer(cfg.band_id.val, on_band_id_change, NULL);

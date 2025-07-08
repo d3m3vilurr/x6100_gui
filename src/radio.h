@@ -33,9 +33,11 @@ typedef enum {
     RADIO_CHARGER_SHADOW
 } radio_charger_t;
 
-typedef void (*radio_state_change_t) ();
+typedef void (*radio_rx_tx_change_t) (bool tx);
 
-void radio_init(radio_state_change_t tx_cb, radio_state_change_t rx_cb);
+void radio_init();
+void radio_set_rx_tx_notify_fn(radio_rx_tx_change_t cb);
+void radio_set_low_power_cb(void(*cb)(bool));
 void radio_bb_reset();
 bool radio_tick();
 radio_state_t radio_get_state();
@@ -57,7 +59,7 @@ void radio_change_mute();
 
 void radio_set_pwr(float d);
 
-radio_charger_t radio_change_charger(int16_t d);
+void radio_set_charger(bool on);
 
 x6100_mic_sel_t radio_change_mic(int16_t d);
 uint8_t radio_change_hmic(int16_t d);
@@ -71,10 +73,6 @@ void radio_stop_swrscan();
 void radio_poweroff();
 void radio_set_ptt(bool tx);
 void radio_set_modem(bool tx);
-
-
-int16_t radio_change_xit(int16_t d);
-int16_t radio_change_rit(int16_t d);
 
 void radio_set_line_in(uint8_t d);
 void radio_set_line_out(uint8_t d);

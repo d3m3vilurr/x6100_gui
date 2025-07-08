@@ -19,7 +19,7 @@ extern "C" {
     #include "mfk.h"
     #include "vol.h"
     #include "msg.h"
-    #include "pannel.h"
+    #include "panel.h"
     #include "params/params.h"
     #include "voice.h"
     #include "pubsub_ids.h"
@@ -32,7 +32,6 @@ typedef struct {
     button_item_t   *item;
 } button_t;
 
-static uint8_t        btn_height = 62;
 static button_t       btn[BUTTONS];
 static lv_obj_t      *parent_obj = NULL;
 static buttons_page_t *cur_page   = NULL;
@@ -59,14 +58,12 @@ static const char * tx_power_label_getter();
 static const char * filter_low_label_getter();
 static const char * filter_high_label_getter();
 static const char * filter_bw_label_getter();
-static const char * speaker_mode_label_getter();
 
 static const char * mic_sel_label_getter();
 static const char * h_mic_gain_label_getter();
 static const char * i_mic_gain_label_getter();
 static const char * moni_level_label_getter();
 
-static const char * charger_label_getter();
 static const char * rit_label_getter();
 static const char * xit_label_getter();
 
@@ -107,12 +104,12 @@ static const char * nr_level_label_getter();
 static void button_action_cb(button_item_t *item);
 
 /* Make VOL button functions */
-static button_item_t make_btn(const char *name, vol_mode_t data) {
+static button_item_t make_btn(const char *name, cfg_vol_mode_t data) {
     return button_item_t{
         .type = BTN_TEXT, .label = name, .press = button_vol_update_cb, .hold = button_vol_hold_cb, .data = data};
 }
 
-static button_item_t make_btn(const char *(*label_fn)(), vol_mode_t data, Subject **subj = nullptr) {
+static button_item_t make_btn(const char *(*label_fn)(), cfg_vol_mode_t data, Subject **subj = nullptr) {
     return button_item_t{.type     = BTN_TEXT_FN,
                          .label_fn = label_fn,
                          .press    = button_vol_update_cb,
@@ -122,12 +119,12 @@ static button_item_t make_btn(const char *(*label_fn)(), vol_mode_t data, Subjec
 }
 
 /* Make MFK button functions */
-static button_item_t make_btn(const char *name, mfk_mode_t data) {
+static button_item_t make_btn(const char *name, cfg_mfk_mode_t data) {
     return button_item_t{
         .type = BTN_TEXT, .label = name, .press = button_mfk_update_cb, .hold = button_mfk_hold_cb, .data = data};
 }
 
-static button_item_t make_btn(const char *(*label_fn)(), mfk_mode_t data, Subject **subj = nullptr) {
+static button_item_t make_btn(const char *(*label_fn)(), cfg_mfk_mode_t data, Subject **subj = nullptr) {
     return button_item_t{.type     = BTN_TEXT_FN,
                          .label_fn = label_fn,
                          .press    = button_mfk_update_cb,
@@ -154,7 +151,7 @@ static button_item_t make_page_btn(const char *name, const char *voice) {
         .type = BTN_TEXT, .label = name, .press = button_next_page_cb, .hold = button_prev_page_cb, .voice = voice};
 }
 
-/* VOL page 1 */
+/* VOL */
 
 static button_item_t btn_vol = {
     .type     = BTN_TEXT_FN,
@@ -165,51 +162,22 @@ static button_item_t btn_vol = {
 };
 
 static button_item_t btn_sql = make_btn(sql_label_getter, VOL_SQL, &cfg.sql.val);
-static button_item_t btn_rfg = make_btn(rfg_label_getter, VOL_RFG);
+static button_item_t btn_rfg = make_btn(rfg_label_getter, VOL_RFG, &cfg_cur.band->rfg.val);
 static button_item_t btn_tx_pwr = make_btn(tx_power_label_getter, VOL_PWR, &cfg.pwr.val);
-
-/* VOL page 2 */
-
 static button_item_t btn_flt_low  = make_btn(filter_low_label_getter, VOL_FILTER_LOW, &cfg_cur.filter.low);
 static button_item_t btn_flt_high = make_btn(filter_high_label_getter, VOL_FILTER_HIGH, &cfg_cur.filter.high);
 static button_item_t btn_flt_bw   = make_btn(filter_bw_label_getter, VOL_FILTER_BW, &cfg_cur.filter.bw);
-
-/* VOL page 3 */
-
 static button_item_t btn_mic_sel   = make_btn(mic_sel_label_getter, VOL_MIC);
 static button_item_t btn_hmic_gain = make_btn(h_mic_gain_label_getter, VOL_HMIC);
 static button_item_t btn_imic_hain = make_btn(i_mic_gain_label_getter, VOL_IMIC);
 static button_item_t btn_moni_lvl  = make_btn(moni_level_label_getter, VOL_MONI);
 
-/* VOL page 4 */
+/* MFK */
 
-static button_item_t btn_voice       = make_btn("Voice", VOL_VOICE_LANG);
-static button_item_t btn_voice_rate  = make_btn("Voice\nRate", VOL_VOICE_RATE);
-static button_item_t btn_voice_pitch = make_btn("Voice\nPitch", VOL_VOICE_PITCH);
-static button_item_t btn_voice_vol   = make_btn("Voice\nVolume", VOL_VOICE_VOLUME);
-
-/* MFK page 1 */
-
-static button_item_t btn_spectrum_min_level = make_btn("Min\nLevel", MFK_MIN_LEVEL);
-static button_item_t btn_spectrum_max_level = make_btn("Max\nLevel", MFK_MAX_LEVEL);
 static button_item_t btn_zoom               = make_btn("Spectrum\nZoom", MFK_SPECTRUM_FACTOR);
-static button_item_t btn_spectrum_beta      = make_btn("Spectrum\nBeta", MFK_SPECTRUM_BETA);
-
-/* MFK page 2 */
-
-static button_item_t btn_spectrum_fill  = make_btn("Spectrum\nFill", MFK_SPECTRUM_FILL);
-static button_item_t btn_spectrum_peak  = make_btn("Spectrum\nPeak", MFK_SPECTRUM_PEAK);
-static button_item_t btn_spectrum_hold  = make_btn("Peaks\nHold", MFK_PEAK_HOLD);
-static button_item_t btn_spectrum_speed = make_btn("Peaks\nSpeed", MFK_PEAK_SPEED);
-
-/* MFK page 3 */
-static button_item_t btn_charger = make_btn(charger_label_getter, MFK_CHARGER);
 static button_item_t btn_ant     = make_btn("Antenna", MFK_ANT);
-static button_item_t btn_rit     = make_btn(rit_label_getter, MFK_RIT);
-static button_item_t btn_xit     = make_btn(xit_label_getter, MFK_XIT);
-
-/* MFK page 4 */
-
+static button_item_t btn_rit     = make_btn(rit_label_getter, MFK_RIT, &cfg.rit.val);
+static button_item_t btn_xit     = make_btn(xit_label_getter, MFK_XIT, &cfg.xit.val);
 static button_item_t btn_agc_hang  = {.type     = BTN_TEXT_FN,
                                       .label_fn = agc_hang_label_getter,
                                       .press    = controls_toggle_agc_hang,
@@ -218,22 +186,14 @@ static button_item_t btn_agc_hang  = {.type     = BTN_TEXT_FN,
                                       .subj     = &cfg.agc_hang.val};
 static button_item_t btn_agc_knee  = make_btn(agc_knee_label_getter, MFK_AGC_KNEE, &cfg.agc_knee.val);
 static button_item_t btn_agc_slope = make_btn(agc_slope_label_getter, MFK_AGC_SLOPE, &cfg.agc_slope.val);
-static button_item_t btn_comp  = {.type     = BTN_TEXT_FN,
-    .label_fn = comp_label_getter,
-    .press    = controls_toggle_comp,
-    .hold     = button_mfk_hold_cb,
-    .data     = MFK_COMP,
-    .subj     = &cfg.comp.val};
+static button_item_t btn_comp      = make_btn(comp_label_getter, MFK_COMP, &cfg.comp.val);
 
-/* MEM page 1 */
+/* MEM */
 
 static button_item_t btn_mem_1 = make_mem_btn("Set 1", 1);
 static button_item_t btn_mem_2 = make_mem_btn("Set 2", 2);
 static button_item_t btn_mem_3 = make_mem_btn("Set 3", 3);
 static button_item_t btn_mem_4 = make_mem_btn("Set 4", 4);
-
-/* MEM page 2 */
-
 static button_item_t btn_mem_5 = make_mem_btn("Set 5", 5);
 static button_item_t btn_mem_6 = make_mem_btn("Set 6", 6);
 static button_item_t btn_mem_7 = make_mem_btn("Set 7", 7);
@@ -361,9 +321,8 @@ static button_item_t btn_rtty_reverse = {
 
 
 /* VOL pages */
-static button_item_t btn_vol_p1 = make_page_btn("(VOL 1:3)", "Volume|page 1");
-static button_item_t btn_vol_p2 = make_page_btn("(VOL 2:3)", "Volume|page 2");
-static button_item_t btn_vol_p3 = make_page_btn("(VOL 3:3)", "Volume|page 3");
+static button_item_t btn_vol_p1 = make_page_btn("(VOL 1:2)", "Volume|page 1");
+static button_item_t btn_vol_p2 = make_page_btn("(VOL 2:2)", "Volume|page 2");
 
 buttons_page_t buttons_page_vol_1 = {
     {&btn_vol_p1, &btn_vol, &btn_sql, &btn_rfg, &btn_tx_pwr}
@@ -371,27 +330,16 @@ buttons_page_t buttons_page_vol_1 = {
 static buttons_page_t page_vol_2 = {
     {&btn_vol_p2, &btn_mic_sel, &btn_hmic_gain, &btn_imic_hain, &btn_moni_lvl}
 };
-static buttons_page_t page_vol_3 = {
-    {&btn_vol_p3, &btn_voice, &btn_voice_rate, &btn_voice_pitch, &btn_voice_vol}
-};
 
 /* MFK pages */
-static button_item_t btn_mfk_p1 = make_page_btn("(MFK 1:4)", "MFK|page 1");
-static button_item_t btn_mfk_p2 = make_page_btn("(MFK 2:4)", "MFK|page 2");
-static button_item_t btn_mfk_p3 = make_page_btn("(MFK 3:4)", "MFK|page 3");
-static button_item_t btn_mfk_p4 = make_page_btn("(MFK 4:4)", "MFK|page 4");
+static button_item_t btn_mfk_p1 = make_page_btn("(MFK 1:2)", "MFK|page 1");
+static button_item_t btn_mfk_p2 = make_page_btn("(MFK 2:2)", "MFK|page 2");
 
 static buttons_page_t page_mfk_1 = {
-    {&btn_mfk_p1, &btn_spectrum_min_level, &btn_spectrum_max_level, &btn_zoom, &btn_spectrum_beta}
+    {&btn_mfk_p1, &btn_rit, &btn_xit, &btn_zoom, &btn_ant}
 };
 static buttons_page_t page_mfk_2 = {
-    {&btn_mfk_p2, &btn_spectrum_fill, &btn_spectrum_peak, &btn_spectrum_hold, &btn_spectrum_speed}
-};
-static buttons_page_t page_mfk_3 = {
-    {&btn_mfk_p3, &btn_charger, &btn_ant, &btn_rit, &btn_xit}
-};
-static buttons_page_t page_mfk_4 = {
-    {&btn_mfk_p4, &btn_agc_hang, &btn_agc_knee, &btn_agc_slope, &btn_comp}
+    {&btn_mfk_p2, &btn_agc_hang, &btn_agc_knee, &btn_agc_slope, &btn_comp}
 };
 
 /* MEM pages */
@@ -469,11 +417,8 @@ buttons_page_t buttons_page_rtty = {
 buttons_group_t buttons_group_gen = {
     &buttons_page_vol_1,
     &page_vol_2,
-    &page_vol_3,
     &page_mfk_1,
     &page_mfk_2,
-    &page_mfk_3,
-    &page_mfk_4,
 };
 
 buttons_group_t buttons_group_app = {
@@ -518,7 +463,10 @@ static struct {
 
 void buttons_init(lv_obj_t *parent) {
 
-    btn_rfg.subj = &cfg_cur.band->rfg.val;
+    if (x6100_control_get_patched_revision() < 3) {
+        // Hide DNF auto button
+        page_dfn_1.items[4] = NULL;
+    }
 
     /* Fill prev/next pointers */
     for (size_t i = 0; i < ARRAY_SIZE(groups); i++) {
@@ -539,7 +487,7 @@ void buttons_init(lv_obj_t *parent) {
         }
     }
 
-    uint16_t y = 480 - btn_height;
+    uint16_t y = 480 - BTN_HEIGHT;
     uint16_t x = 0;
     uint16_t width = 800 / 5;
 
@@ -548,9 +496,11 @@ void buttons_init(lv_obj_t *parent) {
 
         lv_obj_remove_style_all(f);
         lv_obj_add_style(f, &btn_style, 0);
+        lv_obj_add_style(f, &btn_active_style, LV_STATE_CHECKED);
+        lv_obj_add_style(f, &btn_disabled_style, LV_STATE_DISABLED);
 
         lv_obj_set_pos(f, x, y);
-        lv_obj_set_size(f, width, btn_height);
+        lv_obj_set_size(f, width, BTN_HEIGHT);
         x += width;
 
         lv_obj_t *label = lv_label_create(f);
@@ -564,6 +514,51 @@ void buttons_init(lv_obj_t *parent) {
 
     parent_obj = parent;
     lv_msg_subscribe(MSG_PARAM_CHANGED, param_changed_cb, NULL);
+}
+
+void buttons_refresh(button_item_t *item) {
+    if (item->label_obj) {
+        if (item->type == BTN_TEXT) {
+            lv_label_set_text(item->label_obj, item->label);
+        } else if (item->type == BTN_TEXT_FN) {
+            lv_label_set_text(item->label_obj, item->label_fn());
+        } else {
+            lv_label_set_text(item->label_obj, "--");
+        }
+
+    } else {
+        LV_LOG_WARN("Button item label obj is null");
+    }
+}
+
+void buttons_mark(button_item_t *item, bool val) {
+    if (!item) {
+        LV_LOG_INFO("Button item is null, skip mark");
+        return;
+    }
+    item->mark = val;
+    if (item->label_obj) {
+        lv_obj_t *btn = lv_obj_get_parent(item->label_obj);
+        if (val) {
+            lv_obj_add_state(btn, LV_STATE_CHECKED);
+
+        } else {
+            lv_obj_clear_state(btn, LV_STATE_CHECKED);
+        }
+    }
+}
+
+void buttons_disabled(button_item_t *item, bool val) {
+    item->disabled = val;
+    if (item->label_obj) {
+        lv_obj_t *btn = lv_obj_get_parent(item->label_obj);
+        if (val) {
+            lv_obj_add_state(btn, LV_STATE_DISABLED);
+
+        } else {
+            lv_obj_clear_state(btn, LV_STATE_DISABLED);
+        }
+    }
 }
 
 void buttons_load(uint8_t n, button_item_t *item) {
@@ -591,6 +586,17 @@ void buttons_load(uint8_t n, button_item_t *item) {
             lv_label_set_text(label, "");
         }
         item->label_obj = label;
+        lv_obj_t *btn = lv_obj_get_parent(label);
+        if (item->mark) {
+            lv_obj_add_state(btn, LV_STATE_CHECKED);
+        } else {
+            lv_obj_clear_state(btn, LV_STATE_CHECKED);
+        }
+        if (item->disabled) {
+            lv_obj_add_state(btn, LV_STATE_DISABLED);
+        } else {
+            lv_obj_clear_state(btn, LV_STATE_DISABLED);
+        }
     } else {
         lv_label_set_text(label, "");
     }
@@ -620,6 +626,8 @@ void buttons_unload_page() {
         lv_obj_t        *label = btn[i].label;
         lv_label_set_text(label, "");
         lv_obj_set_user_data(label, NULL);
+        lv_obj_clear_state(lv_obj_get_parent(label), LV_STATE_CHECKED);
+        lv_obj_clear_state(lv_obj_get_parent(label), LV_STATE_DISABLED);
         if (btn[i].item) {
             btn[i].item->label_obj = NULL;
             if (btn[i].item->observer) {
@@ -650,24 +658,25 @@ static void button_action_cb(button_item_t *item) {
 }
 
 static void button_vol_update_cb(button_item_t *item) {
-    vol_set_mode((vol_mode_t)item->data);
+    vol_set_mode((cfg_vol_mode_t)item->data);
     vol_update(0, true);
 }
 
 static void button_mfk_update_cb(button_item_t *item) {
-    mfk_set_mode((mfk_mode_t)item->data);
+    mfk_set_mode((cfg_mfk_mode_t)item->data);
     mfk_update(0, true);
 }
 
 static void button_vol_hold_cb(button_item_t *item) {
-    uint64_t        mask = (uint64_t) 1L << item->data;
+    uint64_t mask = (uint64_t)1L << item->data;
 
-    if (params.vol_modes ^ mask) {
-        params_lock();
-        params.vol_modes ^= mask;
-        params_unlock(&params.dirty.vol_modes);
+    uint64_t modes = subject_get_uint64(cfg.vol_modes.val);
 
-        if (params.vol_modes & mask) {
+    if (modes ^ mask) {
+        modes ^= mask;
+        subject_set_uint64(cfg.vol_modes.val, modes);
+
+        if (modes & mask) {
             msg_update_text_fmt("Added to VOL encoder");
             voice_say_text_fmt("Added to volume encoder");
         } else {
@@ -680,12 +689,13 @@ static void button_vol_hold_cb(button_item_t *item) {
 static void button_mfk_hold_cb(button_item_t *item) {
     uint64_t        mask = (uint64_t) 1L << item->data;
 
-    if (params.mfk_modes ^ mask) {
-        params_lock();
-        params.mfk_modes ^= mask;
-        params_unlock(&params.dirty.mfk_modes);
+    uint64_t modes = subject_get_uint64(cfg.mfk_modes.val);
 
-        if (params.mfk_modes & mask) {
+    if (modes ^ mask) {
+        modes ^= mask;
+        subject_set_uint64(cfg.mfk_modes.val, modes);
+
+        if (modes & mask) {
             msg_update_text_fmt("Added to MFK encoder");
             voice_say_text_fmt("Added to MFK encoder");
         } else {
@@ -709,6 +719,10 @@ void buttons_press(uint8_t n, bool hold) {
     button_item_t *item = btn[n].item;
     if (item == NULL) {
         LV_LOG_WARN("Button %u is NULL", n);
+        return;
+    }
+    if (item->disabled) {
+        LV_LOG_USER("Button %s disabled", lv_label_get_text(item->label_obj));
         return;
     }
     if (hold) {
@@ -819,22 +833,16 @@ static const char * moni_level_label_getter() {
     return buf;
 }
 
-static const char * charger_label_getter() {
-    static char buf[22];
-    sprintf(buf, "Charger:\n%s", params_charger_str_get(params.charger));
-    return buf;
-}
-
 
 static const char * rit_label_getter() {
     static char buf[22];
-    sprintf(buf, "RIT:\n%+zi", params.rit);
+    sprintf(buf, "RIT:\n%+zi", subject_get_int(cfg.rit.val));
     return buf;
 }
 
 static const char * xit_label_getter() {
     static char buf[22];
-    sprintf(buf, "XIT:\n%+zi", params.xit);
+    sprintf(buf, "XIT:\n%+zi", subject_get_int(cfg.xit.val));
     return buf;
 }
 
@@ -858,7 +866,7 @@ static const char * agc_slope_label_getter() {
 
 static const char * comp_label_getter() {
     static char buf[22];
-    sprintf(buf, "Comp\n%s", subject_get_int(cfg.comp.val) ? "Off": "On");
+    sprintf(buf, "Comp:\n%s", params_comp_str_get(subject_get_int(cfg.comp.val)));
     return buf;
 }
 

@@ -9,8 +9,10 @@
 #pragma once
 
 #define BUTTONS 5
+#define BTN_HEIGHT 62
 
 #ifdef __cplusplus
+
 #include "cfg/subjects.h"
 
 extern "C" {
@@ -21,6 +23,7 @@ extern "C" {
 #include "main_screen.h"
 #include "mfk.h"
 #include "vol.h"
+
 
 typedef enum {
     BTN_EMPTY,
@@ -42,8 +45,10 @@ typedef struct button_item_t {
     struct buttons_page_t *prev;
     int32_t                data;
     lv_obj_t              *label_obj;
-    Subject               **subj;
+    Subject              **subj;
     Observer              *observer;
+    bool                   mark;
+    bool                   disabled;
 } button_item_t;
 
 typedef struct buttons_page_t {
@@ -71,6 +76,9 @@ extern buttons_group_t buttons_group_msg_cw;
 extern buttons_group_t buttons_group_msg_voice;
 
 void            buttons_init(lv_obj_t *parent);
+void            buttons_refresh(button_item_t *item);
+void            buttons_mark(button_item_t *item, bool val);
+void            buttons_disabled(button_item_t *item, bool val);
 void            buttons_load(uint8_t n, button_item_t *item);
 void            buttons_load_page(buttons_page_t *page);
 void            buttons_unload_page();
