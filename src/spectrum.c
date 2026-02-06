@@ -52,6 +52,7 @@ static int32_t filter_from = 0;
 static int32_t filter_to   = 3000;
 static x6100_mode_t cur_mode;
 static int32_t lo_offset;
+static int32_t if_shift;
 
 static int32_t dnf_enabled = false;
 static int32_t dnf_auto;
@@ -66,10 +67,11 @@ static int16_t freq_mod;
 static pthread_mutex_t data_mux;
 
 static void on_zoom_changed(Subject *subj, void *user_data);
-static void on_real_filter_from_change(Subject *subj, void *user_data);
-static void on_real_filter_to_change(Subject *subj, void *user_data);
+static void update_filter_from(Subject *subj, void *user_data);
+static void update_filter_to(Subject *subj, void *user_data);
 static void on_cur_mode_change(Subject *subj, void *user_data);
 static void on_lo_offset_change(Subject *subj, void *user_data);
+static void on_if_shift_change(Subject *subj, void *user_data);
 static void on_grid_min_change(Subject *subj, void *user_data);
 static void on_grid_max_change(Subject *subj, void *user_data);
 static void on_int32_val_change(Subject *subj, void *user_data);
@@ -111,7 +113,11 @@ static void spectrum_draw_cb(lv_event_t *e) {
     lv_coord_t w = lv_obj_get_width(obj);
     lv_coord_t h = lv_obj_get_height(obj);
 
-    x1 += lo_offset * zoom_factor * w / width_hz;
+    if (spectrum_tx) {
+        x1 += (lo_offset + if_shift) * zoom_factor * w / width_hz;
+    } else {
+        x1 += lo_offset * zoom_factor * w / width_hz;
+    }
 
     lv_point_t main_a, main_b;
     lv_point_t peak_a, peak_b;
@@ -176,8 +182,12 @@ static void spectrum_draw_cb(lv_event_t *e) {
     int32_t f1 = (w * filter_from) / w_hz;
     int32_t f2 = (w * filter_to) / w_hz;
 
+    if (!spectrum_tx) {
+        x1 += if_shift * zoom_factor * w / width_hz;
+    }
+
     area.x1 = x1 + w / 2 + f1;
-    area.y1 = y1 + h - visor_height;
+    area.y1 = y1;
     area.x2 = x1 + w / 2 + f2;
     area.y2 = y1 + h;
 
@@ -202,7 +212,7 @@ static void spectrum_draw_cb(lv_event_t *e) {
         }
 
         area.x1 = x1 + w / 2 + f1;
-        area.y1 = y1 + h - visor_height;
+        area.y1 = y1;
         area.x2 = x1 + w / 2 + f2;
         area.y2 = y1 + h;
 
@@ -219,7 +229,7 @@ static void spectrum_draw_cb(lv_event_t *e) {
         f2 = (int64_t)(w * to) / w_hz;
 
         main_a.x = x1 + w / 2 + f1;
-        main_a.y = y1 + h - visor_height;
+        main_a.y = y1;
         main_b.x = main_a.x;
         main_b.y = y1 + h;
         lv_draw_line(draw_ctx, &main_line_dsc, &main_a, &main_b);
@@ -234,7 +244,7 @@ static void spectrum_draw_cb(lv_event_t *e) {
     main_line_dsc.width = 1;
 
     main_a.x = x1 + w / 2;
-    main_a.y = y1 + h - visor_height;
+    main_a.y = y1;
     main_b.x = main_a.x;
     main_b.y = y1 + h;
 
@@ -277,10 +287,11 @@ lv_obj_t *spectrum_init(lv_obj_t *parent) {
     lv_obj_add_event_cb(obj, rx_cb, EVENT_RADIO_RX, NULL);
 
     subject_add_observer_and_call(cfg_cur.zoom, on_zoom_changed, NULL);
-    subject_add_observer_and_call(cfg_cur.filter.real.from, on_real_filter_from_change, NULL);
-    subject_add_observer_and_call(cfg_cur.filter.real.to, on_real_filter_to_change, NULL);
+    subject_add_observer_and_call(cfg_cur.filter.real.from, update_filter_from, NULL);
+    subject_add_observer_and_call(cfg_cur.filter.real.to, update_filter_to, NULL);
     subject_add_observer_and_call(cfg_cur.mode, on_cur_mode_change, NULL);
     subject_add_observer_and_call(cfg_cur.lo_offset, on_lo_offset_change, NULL);
+    subject_add_observer_and_call(cfg_cur.band->if_shift.val, on_if_shift_change, NULL);
 
     subject_add_observer(cfg.auto_level_enabled.val, on_grid_min_change, NULL);
     subject_add_observer_and_call(cfg_cur.band->grid.min.val, on_grid_min_change, NULL);
@@ -362,11 +373,11 @@ static void on_zoom_changed(Subject *subj, void *user_data) {
     spectrum_clear();
 }
 
-static void on_real_filter_from_change(Subject *subj, void *user_data) {
+static void update_filter_from(Subject *subj, void *user_data) {
     filter_from = subject_get_int(subj);
 }
 
-static void on_real_filter_to_change(Subject *subj, void *user_data) {
+static void update_filter_to(Subject *subj, void *user_data) {
     filter_to = subject_get_int(subj);
 }
 
@@ -377,6 +388,11 @@ static void on_cur_mode_change(Subject *subj, void *user_data) {
 static void on_lo_offset_change(Subject *subj, void *user_data) {
     lo_offset = subject_get_int(subj);
 }
+
+static void on_if_shift_change(Subject *subj, void *user_data) {
+    if_shift = subject_get_int(subj);
+}
+
 static void on_grid_min_change(Subject *subj, void *user_data) {
     if (!subject_get_int(cfg.auto_level_enabled.val)) {
         grid_min = subject_get_int(cfg_cur.band->grid.min.val);

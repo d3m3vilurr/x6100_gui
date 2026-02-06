@@ -65,11 +65,13 @@ typedef enum {
     MFK_RTTY_SHIFT,
     MFK_RTTY_CENTER,
     MFK_RTTY_REVERSE,
+
+    MFK_IF_SHIFT,
 } cfg_mfk_mode_t;
 
 extern cfg_vol_mode_t cfg_encoder_vol_modes[11];
 
-extern cfg_mfk_mode_t cfg_encoder_mfk_modes[30];
+extern cfg_mfk_mode_t cfg_encoder_mfk_modes[31];
 
 
 /* configuration structs. Should contain same types (for correct initialization) */
@@ -93,8 +95,7 @@ typedef struct {
     cfg_item_t rit;
     cfg_item_t xit;
 
-    cfg_item_t tx_i_offset;
-    cfg_item_t tx_q_offset;
+    cfg_item_t fm_emphasis;
 
     /* UI */
     cfg_item_t auto_level_enabled;
