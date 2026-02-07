@@ -83,6 +83,7 @@ typedef struct {
     cfg_item_t sql;
     cfg_item_t pwr;
     cfg_item_t output_gain;
+    cfg_item_t output_pwr_mul;
 
     cfg_item_t key_tone;
     cfg_item_t band_id;

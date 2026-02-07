@@ -1703,6 +1703,41 @@ static uint8_t make_codec_gain(uint8_t row) {
     return row + 1;
 }
 
+/* TX PWR multiplier */
+static void codec_power_multiplier_update_cb(lv_event_t * e) {
+    lv_obj_t *obj = lv_event_get_target(e);
+    float val = (float)lv_slider_get_value(obj) * OUTPUT_GAIN_STEP;
+
+    lv_obj_t *slider_label = (lv_obj_t *)lv_obj_get_user_data(obj);
+    char *fmt = (char *)lv_obj_get_user_data(slider_label);
+    lv_label_set_text_fmt(slider_label, fmt, val);
+    subject_set_float(cfg.output_pwr_mul.val, val);
+}
+
+static uint8_t make_codec_power_multiplier(uint8_t row) {
+    lv_obj_t    *obj;
+    lv_obj_t    *cell;
+
+    cell = lv_label_create(grid);
+
+    lv_label_set_text(cell, "TX codec power multiplier");
+    lv_obj_set_grid_cell(cell, LV_GRID_ALIGN_START, 0, 1, LV_GRID_ALIGN_CENTER, row, 1);
+
+    cell = lv_obj_create(grid);
+
+    lv_obj_set_size(cell, SMALL_6, 56);
+    lv_obj_set_grid_cell(cell, LV_GRID_ALIGN_START, 1, 3, LV_GRID_ALIGN_CENTER, row, 1);
+    lv_obj_set_style_bg_opa(cell, LV_OPA_TRANSP, LV_PART_MAIN);
+    lv_obj_clear_flag(cell, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_center(cell);
+
+    slider_with_text(cell, subject_get_float(cfg.output_pwr_mul.val),
+        0.0f, 100.0f, OUTPUT_GAIN_STEP,
+        SMALL_6 - 120, "%0.1f", codec_power_multiplier_update_cb);
+
+    return row + 1;
+}
+
 /* TX codec DAC gain */
 
 static void band_out_gain_update_cb(lv_event_t * e) {
@@ -1897,6 +1932,11 @@ static void make_general_page() {
 
     row = make_tx_offset(row);
     row = make_delimiter(row);
+
+    if (base_ver.rev >= 8) {
+        row = make_codec_power_multiplier(row);
+        row = make_delimiter(row);
+    }
 
     if (base_ver.rev >= 3) {
         row = make_codec_gain(row);
