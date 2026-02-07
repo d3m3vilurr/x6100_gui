@@ -1776,7 +1776,7 @@ static uint8_t band_out_gain_correction(uint8_t row) {
     lv_obj_center(cell);
 
     slider = slider_with_text(cell, subject_get_float(cfg_cur.band->dac_offset.val),
-        -6.0f, 6.0f, OUTPUT_GAIN_STEP,
+        -12.0f, 12.0f, OUTPUT_GAIN_STEP,
         SMALL_6 - 120, "%0.1f", band_out_gain_update_cb);
 
     Observer *observer = cfg_cur.band->dac_offset.val->subscribe(on_dac_gain_change, slider);
