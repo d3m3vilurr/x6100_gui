@@ -305,7 +305,6 @@ static int init_params_cfg(sqlite3 *db) {
     fill_cfg_item(&cfg.sql, subject_create_int(0), "sql");
     fill_cfg_item_float(&cfg.pwr, subject_create_float(5.0f), 0.1f, "pwr");
     fill_cfg_item_float(&cfg.output_gain, subject_create_float(0.0f), 0.2f, "output_gain");
-    fill_cfg_item_float(&cfg.output_pwr_mul, subject_create_float(1.0f), 0.2f, "output_pwr_mul");
 
     fill_cfg_item(&cfg.key_tone, subject_create_int(700), "key_tone");
     fill_cfg_item(&cfg.band_id, subject_create_int(5), "band");
